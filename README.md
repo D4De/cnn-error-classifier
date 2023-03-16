@@ -11,7 +11,7 @@ that shows visually the differences with the golden tensor will be generated.
 
 The program also generates a json report containing info about the analysis 
 
-## Limitation
+## Limitations
 
 Only tensors with batch dimension (N) equals to 1 can be processed.
 
