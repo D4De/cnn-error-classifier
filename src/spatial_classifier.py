@@ -51,8 +51,8 @@ def bullet_wake_classifier(diff: List[Coordinates]) -> bool:
     Bullet Wake: the same location is corrupted in all (or in multiple) feature maps
     """
     first_N = diff[0].N
-    first_W = diff[0].H
-    first_H = diff[0].W
+    first_W = diff[0].W
+    first_H = diff[0].H
     for coordinates in diff:
         if (
             coordinates.N != first_N

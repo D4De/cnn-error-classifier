@@ -21,13 +21,14 @@ def binary(num):
     return "".join("{:0>8b}".format(c) for c in struct.pack("!f", num))
 
 
-def domain_classification(golden_value: float, faulty_value: float) -> DomainClass:
+def domain_classification(golden_value: float, faulty_value: float, eps : float = 10e-3, almost_same : bool = False) -> DomainClass:
     if math.isnan(faulty_value) or math.isinf(faulty_value):
         return DomainClass.NAN
     if golden_value == faulty_value:
         return DomainClass.SAME
-    if abs(golden_value - faulty_value) < 10e-3:
-        return DomainClass.ALMOST_SAME
+    if abs(golden_value - faulty_value) < eps:
+        # TODO
+        return DomainClass.ALMOST_SAME if almost_same else DomainClass.SAME
     if faulty_value == 0:
         return DomainClass.ZERO
     bit_diff = [
@@ -40,7 +41,7 @@ def domain_classification(golden_value: float, faulty_value: float) -> DomainCla
     else:
         return DomainClass.RANDOM
 
-def domain_classification_int(golden_value: float, faulty_value: float) -> int:
-    return domain_classification(golden_value, faulty_value).value
+def domain_classification_int(golden_value: float, faulty_value: float, eps: float = 10e-3, almost_same: bool = False) -> int:
+    return domain_classification(golden_value, faulty_value, eps, almost_same).value
 
-domain_classification_vect = np.vectorize(domain_classification_int)
+domain_classification_vect = np.vectorize(domain_classification_int, excluded=["eps", "almost_same"])

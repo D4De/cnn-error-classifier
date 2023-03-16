@@ -7,7 +7,6 @@ import os
 from tqdm import tqdm
 import json
 import sys
-
 from domain_classifier import DomainClass, domain_classification, domain_classification_vect
 from visualizer import visualize
 
@@ -17,9 +16,8 @@ from spatial_classifier import (
     spatial_classification,
 )
 
-from coordinates import LAYOUTS, TensorLayout, map_to_coordinates
+from coordinates import TensorLayout, map_to_coordinates
 
-EPS = 10e-3
 
 def setup_logging():
     root = log.getLogger()
@@ -48,6 +46,20 @@ def main():
         "-l", "--limit", type=int, help="Limit the number of tensor to process", metavar='N'
     )
 
+    parser.add_argument(
+        "-as",
+        "--almost-same",
+        action="store_true",
+        help="Include in the plot the values that are very close to golden value (< EPS)",
+    )
+    parser.add_argument(
+        "-eps",
+        "--epsilon",
+        type=float,
+        default=10e-3,
+        help="Set epsilon value. Differences below epsilon are treated as almost same value and are not plotted (unless -as is enabled)",
+    )
+
     tensor_format_group = parser.add_mutually_exclusive_group()
     tensor_format_group.add_argument(
         "-nchw",
@@ -59,6 +71,8 @@ def main():
         action="store_true",
         help="Loaded tensors are stored using NHWC dimensional order",
     )
+
+    
     args = parser.parse_args()
 
     setup_logging()
@@ -133,7 +147,7 @@ def main():
             sp_class_count["skipped"] += 1
             continue
 
-        tensor_diff = domain_classification_vect(golden, faulty)
+        tensor_diff = domain_classification_vect(golden, faulty, args.epsilon, args.almost_same)
 
         cat, counts = np.unique(tensor_diff, return_counts=True)
 
@@ -142,7 +156,7 @@ def main():
         dom_class_count += temp_dom_class_count
             
 
-        sparse_diff_native_coords = list(zip(*np.where(np.abs(golden - faulty) > EPS)))
+        sparse_diff_native_coords = list(zip(*np.where(np.abs(golden - faulty) > args.epsilon)))
         if len(sparse_diff_native_coords) == 0:
             log.info(f"{file_path} has no diffs with golden")
             sp_class_count["masked"] += 1
@@ -160,7 +174,6 @@ def main():
             channel_sums = np.sum(tensor_diff, axis=(0,1,2))
 
         faulty_channels, = np.where(channel_sums != 0)
-
         visualize(
             tensor_diff,
             faulty_channels.tolist(),
@@ -180,11 +193,15 @@ def main():
             "affected_channels": faulty_channels.tolist(),
             "faulty_channels_count": len(faulty_channels)
         }
+    classified_tensors = len(faulty_files_path) - sp_class_count["masked"] - sp_class_count["skipped"]
 
+    if classified_tensors == 0:
+        log.warn("No tensors were classified")
+        exit(0)
     # Main Report Generation
     main_report = OrderedDict()
     global_data = OrderedDict()
-    classified_tensors = len(faulty_files_path) - sp_class_count["masked"] - sp_class_count["skipped"]
+
     global_data["tensor_shape"] = golden_shape._asdict()
     global_data["tensor_size"] = golden.size
     global_data["tensors"] = len(faulty_files_path)
