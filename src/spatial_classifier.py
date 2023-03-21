@@ -1,8 +1,9 @@
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, Dict, List
 from collections import OrderedDict, defaultdict
 from coordinates import Coordinates
 from enum import Enum
 import os
+import shutil
 
 
 class SpatialClass(Enum):
@@ -120,3 +121,9 @@ def create_spatial_classification_folders(output_path: str):
         class_path = sp_class.class_folder(output_path)
         if not os.path.isdir(class_path):
             os.mkdir(class_path)
+
+
+def clear_spatial_classification_folders(output_path: str):
+    for sp_class in SPATIAL_CLASSES:
+        class_path = sp_class.class_folder(output_path)
+        shutil.rmtree(class_path, ignore_errors=True)

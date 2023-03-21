@@ -7,11 +7,14 @@ import os
 from tqdm import tqdm
 import json
 import sys
-from domain_classifier import DomainClass, domain_classification, domain_classification_vect
+from domain_classifier import DomainClass, domain_classification_vect
 from visualizer import visualize
+
+REPORT_FILE = "report.json"
 
 from spatial_classifier import (
     SpatialClass,
+    clear_spatial_classification_folders,
     create_spatial_classification_folders,
     spatial_classification,
 )
@@ -100,6 +103,9 @@ def main():
         exit(1)
     log.info(f"Golden tensor ({args.golden_path}) loaded. Shape {golden_shape}")
 
+    if os.path.exists(os.path.join(args.output_dir, REPORT_FILE)):
+        os.remove(os.path.join(args.output_dir, REPORT_FILE))
+    clear_spatial_classification_folders(args.output_dir)
     # Create output folder structure (if not exists already)
     create_spatial_classification_folders(args.output_dir)
 
@@ -157,6 +163,7 @@ def main():
             
 
         sparse_diff_native_coords = list(zip(*np.where(np.abs(golden - faulty) > args.epsilon)))
+        raveld_coords, = np.where(np.ravel(tensor_diff) > 1)
         if len(sparse_diff_native_coords) == 0:
             log.info(f"{file_path} has no diffs with golden")
             sp_class_count["masked"] += 1
@@ -191,7 +198,8 @@ def main():
             "corrupted_values": sum(temp_dom_class_count[2:]).item(),
             "corrupted_values_pct": sum(temp_dom_class_count[2:]).item() / golden.size * 100,
             "affected_channels": faulty_channels.tolist(),
-            "faulty_channels_count": len(faulty_channels)
+            "faulty_channels_count": len(faulty_channels),
+            "raveled_pos": raveld_coords.tolist()
         }
     classified_tensors = len(faulty_files_path) - sp_class_count["masked"] - sp_class_count["skipped"]
 
@@ -221,7 +229,7 @@ def main():
     main_report["global_data"] = global_data
     main_report["tensors"] = tensor_report
 
-    report_path = os.path.join(args.output_dir, "report.json")
+    report_path = os.path.join(args.output_dir, REPORT_FILE)
 
     with open(report_path, 'w') as f:
         f.writelines(json.dumps(main_report, indent=2))
