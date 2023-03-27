@@ -4,6 +4,7 @@ from coordinates import Coordinates
 from enum import Enum
 import os
 import shutil
+import IPython
 
 
 class SpatialClass(Enum):
@@ -80,7 +81,9 @@ def shattered_glass_classifier(diff: List[Coordinates]) -> bool:
         if coord.H != first_H:
             return False
         cols_by_channels[coord.C].add(coord.W)
-    common_cols = set(cols_by_channels.keys())
+    if len(cols_by_channels) == 0:
+        return False
+    common_cols = cols_by_channels[list(cols_by_channels.keys())[0]]
     # Check if there is a common corrupted position in all corrupted feature maps
     for cols_set in cols_by_channels.values():
         common_cols &= cols_set
@@ -114,13 +117,16 @@ def spatial_classification(diff) -> SpatialClass:
     return SpatialClass.RANDOM
 
 
-def create_spatial_classification_folders(output_path: str):
+def create_spatial_classification_folders(
+    output_path: str, skip_visualize: bool = False
+):
     if not os.path.isdir(output_path):
         os.mkdir(output_path)
-    for sp_class in SPATIAL_CLASSES:
-        class_path = sp_class.class_folder(output_path)
-        if not os.path.isdir(class_path):
-            os.mkdir(class_path)
+    if not skip_visualize:
+        for sp_class in SPATIAL_CLASSES:
+            class_path = sp_class.class_folder(output_path)
+            if not os.path.isdir(class_path):
+                os.mkdir(class_path)
 
 
 def clear_spatial_classification_folders(output_path: str):

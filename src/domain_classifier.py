@@ -4,6 +4,7 @@ from enum import Enum
 
 import numpy as np
 
+
 class DomainClass(Enum):
     SAME = 0
     ALMOST_SAME = 1
@@ -21,7 +22,12 @@ def binary(num):
     return "".join("{:0>8b}".format(c) for c in struct.pack("!f", num))
 
 
-def domain_classification(golden_value: float, faulty_value: float, eps : float = 10e-3, almost_same : bool = False) -> DomainClass:
+def domain_classification(
+    golden_value: float,
+    faulty_value: float,
+    eps: float = 10e-3,
+    almost_same: bool = False,
+) -> DomainClass:
     if math.isnan(faulty_value) or math.isinf(faulty_value):
         return DomainClass.NAN
     if golden_value == faulty_value:
@@ -41,7 +47,16 @@ def domain_classification(golden_value: float, faulty_value: float, eps : float 
     else:
         return DomainClass.RANDOM
 
-def domain_classification_int(golden_value: float, faulty_value: float, eps: float = 10e-3, almost_same: bool = False) -> int:
+
+def domain_classification_int(
+    golden_value: float,
+    faulty_value: float,
+    eps: float = 10e-3,
+    almost_same: bool = False,
+) -> int:
     return domain_classification(golden_value, faulty_value, eps, almost_same).value
 
-domain_classification_vect = np.vectorize(domain_classification_int, excluded=["eps", "almost_same"])
+
+domain_classification_vect = np.vectorize(
+    domain_classification_int, excluded=["eps", "almost_same"]
+)

@@ -11,6 +11,7 @@ from domain_classifier import DomainClass, domain_classification_vect
 from visualizer import visualize
 
 REPORT_FILE = "report.json"
+TOP_PATTERNS_PCT = 5
 
 from spatial_classifier import (
     SpatialClass,
@@ -28,7 +29,7 @@ def setup_logging():
 
     handler = log.StreamHandler(sys.stdout)
     handler.setLevel(log.DEBUG)
-    formatter = log.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    formatter = log.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     handler.setFormatter(formatter)
     root.addHandler(handler)
 
@@ -46,7 +47,17 @@ def main():
         "output_dir", help="Path where to write the ouput of the analysis"
     )
     parser.add_argument(
-        "-l", "--limit", type=int, help="Limit the number of tensor to process", metavar='N'
+        "-l",
+        "--limit",
+        type=int,
+        help="Limit the number of tensor to process",
+        metavar="N",
+    )
+    parser.add_argument(
+        "-v",
+        "--visualize",
+        action="store_true",
+        help="Generate images that show visually the differences between tensors (overwriting the image generated before)",
     )
 
     parser.add_argument(
@@ -105,9 +116,12 @@ def main():
 
     if os.path.exists(os.path.join(args.output_dir, REPORT_FILE)):
         os.remove(os.path.join(args.output_dir, REPORT_FILE))
-    clear_spatial_classification_folders(args.output_dir)
+    if args.visualize:
+        clear_spatial_classification_folders(args.output_dir)
     # Create output folder structure (if not exists already)
-    create_spatial_classification_folders(args.output_dir)
+    create_spatial_classification_folders(
+        args.output_dir, skip_visualize= not args.visualize
+    )
 
     # Consider only files ending in .npy
     faulty_files_path = [
@@ -117,7 +131,7 @@ def main():
     ]
 
     if args.limit is not None:
-        faulty_files_path = faulty_files_path[:args.limit]
+        faulty_files_path = faulty_files_path[: args.limit]
     log.info(f"Found {len(faulty_files_path)} faulty tensors to analize")
 
     # Initialize data structures for reports
@@ -125,6 +139,8 @@ def main():
     dom_class_count = np.int64(np.zeros(len(DomainClass)))
     temp_dom_class_count = np.int64(np.zeros(len(DomainClass)))
     tensor_report = OrderedDict()
+    corrupt_cardinality = defaultdict(lambda: 0)
+    raveled_patterns = defaultdict(lambda: 0)
 
     # Iterate over all tensor files
     for file_path in tqdm(sorted(faulty_files_path)):
@@ -133,12 +149,12 @@ def main():
 
         log.debug(f"Opening {file_path}")
         try:
-            faulty : np.ndarray = np.load(file_path)
+            faulty: np.ndarray = np.load(file_path)
         except:
             log.error(f"Could not read {file_path}")
             sp_class_count["skipped"] += 1
             continue
-        
+
         faulty_shape = map_to_coordinates(faulty.shape, layout)
 
         if faulty_shape != golden_shape:
@@ -153,17 +169,21 @@ def main():
             sp_class_count["skipped"] += 1
             continue
 
-        tensor_diff = domain_classification_vect(golden, faulty, args.epsilon, args.almost_same)
+        tensor_diff = domain_classification_vect(
+            golden, faulty, args.epsilon, args.almost_same
+        )
 
         cat, counts = np.unique(tensor_diff, return_counts=True)
 
         for i in range(len(counts)):
             temp_dom_class_count[cat[i]] = counts[i]
         dom_class_count += temp_dom_class_count
-            
 
-        sparse_diff_native_coords = list(zip(*np.where(np.abs(golden - faulty) > args.epsilon)))
-        raveld_coords, = np.where(np.ravel(tensor_diff) > 1)
+        sparse_diff_native_coords = list(
+            zip(*np.where(np.abs(golden - faulty) > args.epsilon))
+        )
+        (raveld_coords,) = np.where(np.ravel(tensor_diff) > 1)
+        corrupt_cardinality[len(sparse_diff_native_coords)] += 1
         if len(sparse_diff_native_coords) == 0:
             log.info(f"{file_path} has no diffs with golden")
             sp_class_count["masked"] += 1
@@ -176,32 +196,45 @@ def main():
 
         # faulty_channels = {coord.C for coord in sparse_diff}
         if layout == TensorLayout.NCHW:
-            channel_sums = np.sum(tensor_diff, axis=(0,2,3))
+            channel_sums = np.sum(tensor_diff, axis=(0, 2, 3))
         elif layout == TensorLayout.NHWC:
-            channel_sums = np.sum(tensor_diff, axis=(0,1,2))
+            channel_sums = np.sum(tensor_diff, axis=(0, 1, 2))
 
         faulty_channels, = np.where(channel_sums != 0)
-        visualize(
-            tensor_diff,
-            faulty_channels.tolist(),
-            layout,
-            spatial_class.output_path(args.output_dir, file_name),
-            save=True,
-            show=False,
-        )
 
+        if args.visualize:
+            visualize(
+                tensor_diff,
+                faulty_channels.tolist(),
+                layout,
+                spatial_class.output_path(args.output_dir, file_name),
+                save=True,
+                show=False,
+            )
+        
+        raveled_offsets = (raveld_coords - raveld_coords[0]).tolist()
+        if len(raveled_offsets) > 1:
+            raveled_patterns[str(sorted(raveled_offsets))] += 1
 
         # Per tensor report generator
         tensor_report[file_name] = {
             "class": spatial_class.display_name(),
-            "domain_classes": {clz.display_name() : temp_dom_class_count[i].item() for i, clz in enumerate(DomainClass)},
+            "domain_classes": {
+                clz.display_name(): temp_dom_class_count[i].item()
+                for i, clz in enumerate(DomainClass)
+            },
             "corrupted_values": sum(temp_dom_class_count[2:]).item(),
-            "corrupted_values_pct": sum(temp_dom_class_count[2:]).item() / golden.size * 100,
+            "corrupted_values_pct": sum(temp_dom_class_count[2:]).item()
+            / golden.size
+            * 100,
             "affected_channels": faulty_channels.tolist(),
             "faulty_channels_count": len(faulty_channels),
-            "raveled_pos": raveld_coords.tolist()
+            "raveled_start": raveld_coords[0].item(),
+            "raveled_offsets": raveled_offsets,
         }
-    classified_tensors = len(faulty_files_path) - sp_class_count["masked"] - sp_class_count["skipped"]
+    classified_tensors = (
+        len(faulty_files_path) - sp_class_count["masked"] - sp_class_count["skipped"]
+    )
 
     if classified_tensors == 0:
         log.warn("No tensors were classified")
@@ -217,21 +250,45 @@ def main():
     global_data["skipped"] = sp_class_count["skipped"]
     global_data["classified_tensors"] = classified_tensors
     global_data["corrupted_values"] = sum(dom_class_count[2:]).item()
-    global_data["average_corrupted_values_pct"] = float(sum(dom_class_count[2:]).item()) / golden.size / classified_tensors * 100
+    global_data["average_corrupted_values_pct"] = (
+        float(sum(dom_class_count[2:]).item()) / golden.size / classified_tensors * 100
+    )
     global_data["spatial_classes"] = {
-        "absolute": {sp_class.display_name() : sp_class_count[sp_class.name] for sp_class in SpatialClass},
-        "pct": {sp_class.display_name() : sp_class_count[sp_class.name] / classified_tensors * 100 for sp_class in SpatialClass}
+        "absolute": {
+            sp_class.display_name(): sp_class_count[sp_class.name]
+            for sp_class in SpatialClass
+        },
+        "pct": {
+            sp_class.display_name(): sp_class_count[sp_class.name]
+            / classified_tensors
+            * 100
+            for sp_class in SpatialClass
+        },
     }
     global_data["domain_classes"] = {
-        "absolute": {dom_class.display_name() : dom_class_count[dom_class.value].item() for dom_class in DomainClass},
-        "pct": {dom_class.display_name() : float(dom_class_count[dom_class.value].item()) / golden.size / classified_tensors * 100 for dom_class in DomainClass}
-    }
+        "absolute": {
+            dom_class.display_name(): dom_class_count[dom_class.value].item()
+            for dom_class in DomainClass
+        },
+        "pct": {
+            dom_class.display_name(): float(dom_class_count[dom_class.value].item())
+            / golden.size
+            / classified_tensors
+            * 100
+            for dom_class in DomainClass
+        },
+    },
+    global_data["corrupt_cardinality"] = {
+        "absolute": corrupt_cardinality,
+        "relative": { n_errors: freq / global_data["corrupted_values"] * 100 for n_errors, freq in corrupt_cardinality.items() }
+    },
+    global_data["raveled_patterns"] = OrderedDict(sorted([(pattern, freq) for pattern, freq in raveled_patterns.items() if freq > TOP_PATTERNS_PCT / 100 * len(raveled_patterns)], key = lambda x: x[1], reverse=True))
     main_report["global_data"] = global_data
     main_report["tensors"] = tensor_report
 
     report_path = os.path.join(args.output_dir, REPORT_FILE)
 
-    with open(report_path, 'w') as f:
+    with open(report_path, "w") as f:
         f.writelines(json.dumps(main_report, indent=2))
 
 

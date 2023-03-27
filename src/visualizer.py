@@ -13,15 +13,15 @@ import logging as log
 
 levels = [clz.value for clz in DomainClass] + [len(DomainClass)]
 labels = [""] + [clz.display_name() for clz in DomainClass]
-colors = ["white", "yellow", "orange", "red", "olive", "brown","black"]
+colors = ["white", "yellow", "orange", "red", "olive", "brown", "black"]
 cmap, norm = matplotlib.colors.from_levels_and_colors(levels, colors, extend="neither")
 
 
-def split_two(num : int) -> Tuple[int,int]:
-    '''
+def split_two(num: int) -> Tuple[int, int]:
+    """
     Given a number [num] of plots returns the optimal arrangment for displaying
     the subplot in a 2D grid.
-    '''
+    """
     if num == 1:
         return 1, 1
     if is_square(num):
@@ -35,7 +35,7 @@ def split_two(num : int) -> Tuple[int,int]:
     return radix, num // radix
 
 
-def is_square(apositiveint : int) -> bool:
+def is_square(apositiveint: int) -> bool:
     x = apositiveint // 2
     seen = set([x])
     while x * x != apositiveint:
@@ -54,7 +54,6 @@ def visualize(
     save: bool = False,
     show: bool = True,
 ):
-
     scene_dim_x, scene_dim_y = split_two(len(faulty_channels))
 
     fig, axs = plt.subplots(scene_dim_x, scene_dim_y)
@@ -73,7 +72,7 @@ def visualize(
         else:
             # Plots arranged in a 2D Grid
             curr_axs = axs[i % scene_dim_x, i // scene_dim_x]
-    
+
         # Show image with diff
         img = curr_axs.imshow(slice_diff, cmap=cmap, norm=norm, interpolation="nearest")
         # Clear Axis
@@ -83,7 +82,7 @@ def visualize(
         curr_axs.set_xticklabels([])
         # Label
         curr_axs.set_title(f"CH {curr_C}", fontsize=9)
-    
+
     # Add colorbar legend
     fig.subplots_adjust(right=0.8)
     cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
@@ -100,4 +99,3 @@ def visualize(
 
     plt.savefig(output_path)
     plt.close()
-
