@@ -15,7 +15,7 @@ class SpatialClass(Enum):
     SHATTERED_GLASS = 4
     RANDOM = 5
 
-    def display_name(self):
+    def display_name(self) -> str:
         return self.name.lower()
 
     def class_folder(self, output_path) -> str:
@@ -117,16 +117,13 @@ def spatial_classification(diff) -> SpatialClass:
     return SpatialClass.RANDOM
 
 
-def create_spatial_classification_folders(
-    output_path: str, skip_visualize: bool = False
-):
-    if not os.path.isdir(output_path):
-        os.mkdir(output_path)
-    if not skip_visualize:
-        for sp_class in SPATIAL_CLASSES:
-            class_path = sp_class.class_folder(output_path)
-            if not os.path.isdir(class_path):
-                os.mkdir(class_path)
+def create_visual_spatial_classification_folders(visualize_output_folder: str):
+    if not os.path.isdir(visualize_output_folder):
+        os.mkdir(visualize_output_folder)
+    for sp_class in SPATIAL_CLASSES:
+        class_path = sp_class.class_folder(visualize_output_folder)
+        if not os.path.isdir(class_path):
+            os.mkdir(class_path)
 
 
 def clear_spatial_classification_folders(output_path: str):

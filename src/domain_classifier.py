@@ -14,7 +14,7 @@ class DomainClass(Enum):
     RANDOM = 5
     NAN = 6
 
-    def display_name(self):
+    def display_name(self) -> str:
         return self.name.lower()
 
 

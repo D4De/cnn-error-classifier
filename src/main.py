@@ -1,23 +1,20 @@
 import argparse
+from typing import List
 import numpy as np
 import logging as log
-from collections import OrderedDict, defaultdict
-import traceback
+from collections import OrderedDict
 import os
 from tqdm import tqdm
 import json
 import sys
-from domain_classifier import DomainClass, domain_classification_vect
-from visualizer import visualize
+from tensor_analyzer import analyze_tensor_directory
 
 REPORT_FILE = "report.json"
 TOP_PATTERNS_PCT = 5
 
 from spatial_classifier import (
-    SpatialClass,
     clear_spatial_classification_folders,
-    create_spatial_classification_folders,
-    spatial_classification,
+    create_visual_spatial_classification_folders,
 )
 
 from coordinates import TensorLayout, map_to_coordinates
@@ -34,14 +31,41 @@ def setup_logging():
     root.addHandler(handler)
 
 
+def precalculate_workload(batch_paths: List[str], faulty_path: str):
+    tensors = 0
+    for batch_path in batch_paths:
+        faulty_dir_path = os.path.join(batch_path, faulty_path)
+        sub_batch_dirs = [
+            os.path.join(faulty_dir_path, dir)
+            for dir in os.listdir(faulty_dir_path)
+            if os.path.isdir(os.path.join(faulty_dir_path, dir))
+        ]
+        for sub_batch_path in sub_batch_dirs:
+            tensors += len(
+                [
+                    os.path.join(sub_batch_path, entry)
+                    for entry in os.listdir(sub_batch_path)
+                    if entry.split(".")[1] == "npy"
+                ]
+            )
+    return tensors
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="Tensor Error Classifier",
         description="Compares Faulty Tensors with a golden one, and classifies them",
     )
-    parser.add_argument("golden_path", help="A path to the golden .npy file")
     parser.add_argument(
-        "faulty_path", help="A path to a folder containing faulty .npy files"
+        "root_path", help="A path to the root folder of the test results"
+    )
+    parser.add_argument(
+        "golden_path",
+        help="A relative path that reaches the golden file from the test batch home folder",
+    )
+    parser.add_argument(
+        "faulty_path",
+        help="A relative path that reaches the folders containing faulty files from the test batch home folder",
     )
     parser.add_argument(
         "output_dir", help="Path where to write the ouput of the analysis"
@@ -86,7 +110,6 @@ def main():
         help="Loaded tensors are stored using NHWC dimensional order",
     )
 
-    
     args = parser.parse_args()
 
     setup_logging()
@@ -94,202 +117,102 @@ def main():
     # Read layout from args (default is NCHW)
     layout = TensorLayout.NHWC if args.nhwc else TensorLayout.NCHW
 
-    # Load golden from file
-    try:
-        golden : np.ndarray = np.load(args.golden_path)
-    except:
-        log.error("Could not read golden")
-        traceback.print_exc()
-        exit(1)
-
-    if golden is not None and len(golden.shape) != 4:
-        log.error("Invalid shape of golden tensor")
-        exit(1)
-
-    # Remap coordinates using Coordinate namedtuple
-    golden_shape = map_to_coordinates(golden.shape, layout)
-
-    if not os.path.exists(args.faulty_path):
-        log.error("Could not open path to faulty path")
-        exit(1)
-    log.info(f"Golden tensor ({args.golden_path}) loaded. Shape {golden_shape}")
-
-    if os.path.exists(os.path.join(args.output_dir, REPORT_FILE)):
-        os.remove(os.path.join(args.output_dir, REPORT_FILE))
-    if args.visualize:
-        clear_spatial_classification_folders(args.output_dir)
-    # Create output folder structure (if not exists already)
-    create_spatial_classification_folders(
-        args.output_dir, skip_visualize= not args.visualize
-    )
-
-    # Consider only files ending in .npy
-    faulty_files_path = [
-        os.path.join(args.faulty_path, entry)
-        for entry in os.listdir(args.faulty_path)
-        if entry.split(".")[1] == "npy"
+    test_batches_paths = [
+        os.path.join(args.root_path, dir)
+        for dir in os.listdir(args.root_path)
+        if os.path.isdir(os.path.join(args.root_path, dir))
     ]
 
     if args.limit is not None:
-        faulty_files_path = faulty_files_path[: args.limit]
-    log.info(f"Found {len(faulty_files_path)} faulty tensors to analize")
+        test_batches_paths = test_batches_paths[: args.limit]
 
-    # Initialize data structures for reports
-    sp_class_count = defaultdict(lambda: 0)
-    dom_class_count = np.int64(np.zeros(len(DomainClass)))
-    temp_dom_class_count = np.int64(np.zeros(len(DomainClass)))
-    tensor_report = OrderedDict()
-    corrupt_cardinality = defaultdict(lambda: 0)
-    raveled_patterns = defaultdict(lambda: 0)
+    log.info(f"Found {len(test_batches_paths)} batches to analyze")
 
-    # Iterate over all tensor files
-    for file_path in tqdm(sorted(faulty_files_path)):
-        temp_dom_class_count = np.int64(np.zeros(len(DomainClass)))
-        file_name = os.path.basename(file_path).split(".")[0]
+    visualize_path = os.path.join(args.output_dir, "visualize")
+    reports_path = os.path.join(args.output_dir, "reports")
 
-        log.debug(f"Opening {file_path}")
-        try:
-            faulty: np.ndarray = np.load(file_path)
-        except:
-            log.error(f"Could not read {file_path}")
-            sp_class_count["skipped"] += 1
-            continue
+    if not os.path.exists(args.output_dir):
+        os.mkdir(args.output_dir)
 
-        faulty_shape = map_to_coordinates(faulty.shape, layout)
+    if not os.path.exists(reports_path):
+        os.mkdir(reports_path)
 
-        if faulty_shape != golden_shape:
-            log.warn(
-                f"Skipping {file_path}. Invalid shape (Faulty has shape: {faulty_shape}, Golden has shape: {golden_shape})"
-            )
-            sp_class_count["skipped"] += 1
-            continue
+    if args.visualize:
+        clear_spatial_classification_folders(visualize_path)
+        # Create output folder structure (if not exists already)
+        create_visual_spatial_classification_folders(visualize_path)
 
-        if faulty_shape.N != 1:
-            log.warn(f"Skipping {file_path} not supported tensor (Batch dim > 1)")
-            sp_class_count["skipped"] += 1
-            continue
+    workload = precalculate_workload(test_batches_paths, args.faulty_path)
 
-        tensor_diff = domain_classification_vect(
-            golden, faulty, args.epsilon, args.almost_same
-        )
+    log.info(f"Found {workload} tensors to analyze")
 
-        cat, counts = np.unique(tensor_diff, return_counts=True)
+    log.getLogger().setLevel(log.WARN)
 
-        for i in range(len(counts)):
-            temp_dom_class_count[cat[i]] = counts[i]
-        dom_class_count += temp_dom_class_count
+    global_report = OrderedDict()
+    with tqdm(total=workload) as prog_bar:
+        for batch_path in sorted(test_batches_paths):
+            golden_path = os.path.join(batch_path, args.golden_path)
+            batch_name = os.path.basename(batch_path)
 
-        sparse_diff_native_coords = list(
-            zip(*np.where(np.abs(golden - faulty) > args.epsilon))
-        )
-        (raveld_coords,) = np.where(np.ravel(tensor_diff) > 1)
-        corrupt_cardinality[len(sparse_diff_native_coords)] += 1
-        if len(sparse_diff_native_coords) == 0:
-            log.info(f"{file_path} has no diffs with golden")
-            sp_class_count["masked"] += 1
-            continue
-        sparse_diff = [
-            map_to_coordinates(coords, layout) for coords in sparse_diff_native_coords
-        ]
-        spatial_class = spatial_classification(sparse_diff)
-        sp_class_count[spatial_class.name] += 1
+            if not os.path.exists(golden_path):
+                print(
+                    f"Skipping {batch_name} batch since it does not contain golden tensor"
+                )
 
-        # faulty_channels = {coord.C for coord in sparse_diff}
-        if layout == TensorLayout.NCHW:
-            channel_sums = np.sum(tensor_diff, axis=(0, 2, 3))
-        elif layout == TensorLayout.NHWC:
-            channel_sums = np.sum(tensor_diff, axis=(0, 1, 2))
+            # Load golden from file
+            try:
+                golden: np.ndarray = np.load(golden_path)
+            except:
+                log.error(f"Skipping {batch_name} batch. Could not read golden")
+                continue
 
-        faulty_channels, = np.where(channel_sums != 0)
+            if golden is not None and len(golden.shape) != 4:
+                log.error(
+                    f"Skipping {batch_name} batch. Dimension of golden not supported {golden.shape}"
+                )
+                continue
 
-        if args.visualize:
-            visualize(
-                tensor_diff,
-                faulty_channels.tolist(),
-                layout,
-                spatial_class.output_path(args.output_dir, file_name),
-                save=True,
-                show=False,
-            )
-        
-        raveled_offsets = (raveld_coords - raveld_coords[0]).tolist()
-        if len(raveled_offsets) > 1:
-            raveled_patterns[str(sorted(raveled_offsets))] += 1
+            # Remap coordinates using Coordinate namedtuple
+            golden_shape = map_to_coordinates(golden.shape, layout)
+            log.info(f"Golden tensor ({args.golden_path}) loaded. Shape {golden_shape}")
 
-        # Per tensor report generator
-        tensor_report[file_name] = {
-            "class": spatial_class.display_name(),
-            "domain_classes": {
-                clz.display_name(): temp_dom_class_count[i].item()
-                for i, clz in enumerate(DomainClass)
-            },
-            "corrupted_values": sum(temp_dom_class_count[2:]).item(),
-            "corrupted_values_pct": sum(temp_dom_class_count[2:]).item()
-            / golden.size
-            * 100,
-            "affected_channels": faulty_channels.tolist(),
-            "faulty_channels_count": len(faulty_channels),
-            "raveled_start": raveld_coords[0].item(),
-            "raveled_offsets": raveled_offsets,
-        }
-    classified_tensors = (
-        len(faulty_files_path) - sp_class_count["masked"] - sp_class_count["skipped"]
-    )
+            faulty_path = os.path.join(batch_path, args.faulty_path)
 
-    if classified_tensors == 0:
-        log.warn("No tensors were classified")
-        exit(0)
-    # Main Report Generation
-    main_report = OrderedDict()
-    global_data = OrderedDict()
+            if not os.path.exists(faulty_path):
+                log.warning(
+                    f"Skipping {batch_name} batch. Could not open path to faulty path"
+                )
+                continue
 
-    global_data["tensor_shape"] = golden_shape._asdict()
-    global_data["tensor_size"] = golden.size
-    global_data["tensors"] = len(faulty_files_path)
-    global_data["masked"] = sp_class_count["masked"]
-    global_data["skipped"] = sp_class_count["skipped"]
-    global_data["classified_tensors"] = classified_tensors
-    global_data["corrupted_values"] = sum(dom_class_count[2:]).item()
-    global_data["average_corrupted_values_pct"] = (
-        float(sum(dom_class_count[2:]).item()) / golden.size / classified_tensors * 100
-    )
-    global_data["spatial_classes"] = {
-        "absolute": {
-            sp_class.display_name(): sp_class_count[sp_class.name]
-            for sp_class in SpatialClass
-        },
-        "pct": {
-            sp_class.display_name(): sp_class_count[sp_class.name]
-            / classified_tensors
-            * 100
-            for sp_class in SpatialClass
-        },
-    }
-    global_data["domain_classes"] = {
-        "absolute": {
-            dom_class.display_name(): dom_class_count[dom_class.value].item()
-            for dom_class in DomainClass
-        },
-        "pct": {
-            dom_class.display_name(): float(dom_class_count[dom_class.value].item())
-            / golden.size
-            / classified_tensors
-            * 100
-            for dom_class in DomainClass
-        },
-    },
-    global_data["corrupt_cardinality"] = {
-        "absolute": corrupt_cardinality,
-        "relative": { n_errors: freq / global_data["corrupted_values"] * 100 for n_errors, freq in corrupt_cardinality.items() }
-    },
-    global_data["raveled_patterns"] = OrderedDict(sorted([(pattern, freq) for pattern, freq in raveled_patterns.items() if freq > TOP_PATTERNS_PCT / 100 * len(raveled_patterns)], key = lambda x: x[1], reverse=True))
-    main_report["global_data"] = global_data
-    main_report["tensors"] = tensor_report
+            sub_batch_dir = [
+                os.path.join(faulty_path, dir)
+                for dir in os.listdir(faulty_path)
+                if os.path.isdir(os.path.join(faulty_path, dir))
+            ]
 
-    report_path = os.path.join(args.output_dir, REPORT_FILE)
+            global_report[batch_name] = OrderedDict()
 
-    with open(report_path, "w") as f:
-        f.writelines(json.dumps(main_report, indent=2))
+            for faulty_path in sorted(sub_batch_dir):
+                sub_batch_name = os.path.basename(faulty_path)
+                report = analyze_tensor_directory(
+                    faulty_path=faulty_path,
+                    golden=golden,
+                    report_output_path=os.path.join(
+                        reports_path, f"report_{batch_name}_{sub_batch_name}.json"
+                    ),
+                    layout=layout,
+                    epsilon=args.epsilon,
+                    almost_same=args.almost_same,
+                    image_output_dir=visualize_path,
+                    visualize_errors=args.visualize,
+                    save_report=True,
+                    prog_bar=prog_bar,
+                )
+                global_report[batch_name][sub_batch_name] = report["global_data"]
+                del global_report[batch_name][sub_batch_name]["raveled_patterns"]
+
+    with open(os.path.join(args.output_dir, "global_report.json"), "w") as f:
+        f.writelines(json.dumps(global_report, indent=2))
 
 
 if __name__ == "__main__":

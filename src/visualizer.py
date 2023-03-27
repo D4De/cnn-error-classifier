@@ -53,10 +53,13 @@ def visualize(
     output_path: Union[str, None] = None,
     save: bool = False,
     show: bool = True,
+    suptitile: str = ""
 ):
     scene_dim_x, scene_dim_y = split_two(len(faulty_channels))
 
     fig, axs = plt.subplots(scene_dim_x, scene_dim_y)
+    if len(suptitile) > 0:
+        plt.suptitle(suptitile)
 
     for i, curr_C in enumerate(faulty_channels):
         if layout_type == TensorLayout.NCHW:
