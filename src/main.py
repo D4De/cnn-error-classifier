@@ -94,7 +94,7 @@ def main():
         "-eps",
         "--epsilon",
         type=float,
-        default=10e-3,
+        default=1e-3,
         help="Set epsilon value. Differences below epsilon are treated as almost same value and are not plotted (unless -as is enabled)",
     )
 
@@ -184,6 +184,14 @@ def main():
                 )
                 continue
 
+            metadata_path = os.path.join(faulty_path, "info.json")
+
+            if os.path.exists(metadata_path):
+                with open(metadata_path, 'r') as f:
+                    metadata = json.loads(f.read())
+            else:
+                metadata = {}
+
             sub_batch_dir = [
                 os.path.join(faulty_path, dir)
                 for dir in os.listdir(faulty_path)
@@ -192,8 +200,16 @@ def main():
 
             global_report[batch_name] = OrderedDict()
 
+
+
             for faulty_path in sorted(sub_batch_dir):
                 sub_batch_name = os.path.basename(faulty_path)
+
+                igid = sub_batch_name.split('_')[0]
+                bfm = sub_batch_name.split('_')[1]
+
+                local_metadata = metadata | {'igid': igid, 'bfm': bfm}
+
                 report = analyze_tensor_directory(
                     faulty_path=faulty_path,
                     golden=golden,
@@ -207,6 +223,7 @@ def main():
                     visualize_errors=args.visualize,
                     save_report=True,
                     prog_bar=prog_bar,
+                    metadata=local_metadata
                 )
                 global_report[batch_name][sub_batch_name] = report["global_data"]
                 del global_report[batch_name][sub_batch_name]["raveled_patterns"]

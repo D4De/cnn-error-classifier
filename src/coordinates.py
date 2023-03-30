@@ -10,6 +10,19 @@ class TensorLayout(Enum):
     NHWC = 0
     NCHW = 1
 
+    def N_index(self):
+        return self.name.index('N')
+    
+    def H_index(self):
+        return self.name.index('H')
+    
+    def C_index(self):
+        return self.name.index('C')
+    
+    def W_index(self):
+        return self.name.index('W')
+    
+
 
 LAYOUTS = {
     TensorLayout.NHWC: Coordinates(0, 1, 2, 3),

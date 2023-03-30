@@ -1,19 +1,22 @@
-from typing import Callable, Dict, List
+from itertools import groupby
+from typing import Callable, Dict, Iterable, Tuple
 from collections import OrderedDict, defaultdict
-from coordinates import Coordinates
+
+import numpy as np
+from coordinates import Coordinates, TensorLayout
 from enum import Enum
 import os
 import shutil
-import IPython
 
 
 class SpatialClass(Enum):
     SAME = 0
     SINGLE = 1
-    SAME_ROW = 2
-    BULLET_WAKE = 3
-    SHATTERED_GLASS = 4
-    RANDOM = 5
+    PHOTOCOPY = 2
+    SAME_ROW = 3
+    BULLET_WAKE = 4
+    SHATTERED_GLASS = 5
+    RANDOM = 6
 
     def display_name(self) -> str:
         return self.name.lower()
@@ -25,11 +28,22 @@ class SpatialClass(Enum):
         return os.path.join(output_path, self.display_name(), basename)
 
 
-def single_classifier(diff: List[Coordinates]) -> bool:
+def single_classifier(diff: Iterable[Coordinates], dense_diff: Tuple[np.ndarray, TensorLayout]) -> bool:
     return len(diff) == 1
 
+def photocopy(diff: Iterable[Coordinates], dense_diff: Tuple[np.ndarray, TensorLayout]) -> bool:
+    tensor, layout = dense_diff
+    is_correct_tensor = (tensor == 0)[layout.N_index()]
+    layers_with_error = is_correct_tensor[~np.all(is_correct_tensor, axis=(layout.H_index() - 1, layout.W_index() - 1))]
+    if layers_with_error.shape[0] <= 1:
+        return False
+    if layout == TensorLayout.NCHW:
+        return np.all(layers_with_error == layers_with_error[0,:,:])
+    else:
+        return np.all(layers_with_error == layers_with_error[:,:,0])            
 
-def same_row_classifier(diff: List[Coordinates]) -> bool:
+
+def same_row_classifier(diff: Iterable[Coordinates], dense_diff: Tuple[np.ndarray, TensorLayout]) -> bool:
     """
     Return True if a bullet Wake spatial distribution is recognized
     Same Row: multiple corrupted values lie in the same row (same feature map)
@@ -47,7 +61,7 @@ def same_row_classifier(diff: List[Coordinates]) -> bool:
     return True
 
 
-def bullet_wake_classifier(diff: List[Coordinates]) -> bool:
+def bullet_wake_classifier(diff: Iterable[Coordinates], dense_diff: Tuple[np.ndarray, TensorLayout]) -> bool:
     """
     Return True if a bullet Wake spatial distribution is recognized
     Bullet Wake: the same location is corrupted in all (or in multiple) feature maps
@@ -68,7 +82,7 @@ def bullet_wake_classifier(diff: List[Coordinates]) -> bool:
         return False
 
 
-def shattered_glass_classifier(diff: List[Coordinates]) -> bool:
+def shattered_glass_classifier(diff: Iterable[Coordinates], dense_diff: Tuple[np.ndarray, TensorLayout]) -> bool:
     """
     Return True if a Shattered Glass spatial distribution is recognized.
     Shattered glass: like one or more Bullet wake errors, but in one or multiple feature maps the corruption spreads over a row (or part of the row)
@@ -93,16 +107,17 @@ def shattered_glass_classifier(diff: List[Coordinates]) -> bool:
         return False
 
 
-def random_classifier(_: List[Coordinates]) -> bool:
+def random_classifier(_: Iterable[Coordinates], x : Tuple[np.ndarray, TensorLayout]) -> bool:
     return True
 
 
-CLASSIFIERS: Dict[SpatialClass, Callable[[List[Coordinates]], bool]] = OrderedDict(
+CLASSIFIERS: Dict[SpatialClass, Callable[[Iterable[Coordinates], Tuple[np.ndarray, TensorLayout]], bool]] = OrderedDict(
     [
         (SpatialClass.SINGLE, single_classifier),
         (SpatialClass.SAME_ROW, same_row_classifier),
         (SpatialClass.BULLET_WAKE, bullet_wake_classifier),
         (SpatialClass.SHATTERED_GLASS, shattered_glass_classifier),
+        (SpatialClass.PHOTOCOPY, photocopy),
         (SpatialClass.RANDOM, random_classifier),
     ]
 )
@@ -110,9 +125,9 @@ CLASSIFIERS: Dict[SpatialClass, Callable[[List[Coordinates]], bool]] = OrderedDi
 SPATIAL_CLASSES = list(CLASSIFIERS.keys())
 
 
-def spatial_classification(diff) -> SpatialClass:
+def spatial_classification(diff : Iterable[Coordinates], sparse_diff : Tuple[np.ndarray, TensorLayout]) -> SpatialClass:
     for sp_class, classifier in CLASSIFIERS.items():
-        if classifier(diff):
+        if classifier(diff, sparse_diff):
             return sp_class
     return SpatialClass.RANDOM
 

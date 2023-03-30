@@ -12,6 +12,9 @@ import numpy as np
 from visualizer import visualize
 
 
+def sort_dict(data : dict, sort_key = lambda x: x[1] , reverse = True):
+    return OrderedDict(sorted([(key, value) for key, value in data.items()], key=sort_key, reverse=reverse))
+
 def analyze_tensor(
     file_path: str,
     golden: np.ndarray,
@@ -20,6 +23,7 @@ def analyze_tensor(
     almost_same: bool,
     visualize_errors: bool,
     output_dir: str,
+    metadata: dict = {},
 ):
     # Initialization
     temp_dom_class_count = np.int64(np.zeros(len(DomainClass)))
@@ -70,7 +74,7 @@ def analyze_tensor(
     ]
 
     # Permorm spatial classifcation
-    spatial_class = spatial_classification(sparse_diff)
+    spatial_class = spatial_classification(sparse_diff, (tensor_diff, layout))
 
     # Get faults for each channel
     # faulty_channels = {coord.C for coord in sparse_diff}
@@ -81,7 +85,7 @@ def analyze_tensor(
 
     (faulty_channels,) = np.where(channel_sums != 0)
 
-    if visualize_errors and spatial_class == SpatialClass.RANDOM:
+    if visualize_errors and (spatial_class == SpatialClass.RANDOM or spatial_class == SpatialClass.PHOTOCOPY):
         # Create error visualization
         visualize(
             tensor_diff,
@@ -90,7 +94,8 @@ def analyze_tensor(
             spatial_class.output_path(output_dir, file_name),
             save=True,
             show=False,
-            suptitile=f"{golden_shape.C}x{golden_shape.H}x{golden_shape.W}"
+            suptitile=f'conv_{metadata["test_campaign"]} {metadata["igid"]} {metadata["bfm"]} {golden_shape.C}x{golden_shape.H}x{golden_shape.W}',
+            invalidate=True
         )
 
     raveled_offsets = (raveld_coords - raveld_coords[0]).tolist()
@@ -122,6 +127,7 @@ def analyze_tensor_directory(
     image_output_dir: str = "",
     visualize_errors: bool = False,
     save_report: bool = True,
+    metadata: dict = {},
     prog_bar=None,
 ):
     golden_shape = map_to_coordinates(golden.shape, layout)
@@ -153,6 +159,7 @@ def analyze_tensor_directory(
             almost_same=almost_same,
             visualize_errors=visualize_errors,
             output_dir=image_output_dir,
+            metadata=metadata
         )
         if prog_bar is not None:
             prog_bar.update(1)
@@ -187,36 +194,27 @@ def analyze_tensor_directory(
     global_data["average_corrupted_values_pct"] = (
         float(corrupted_values) / golden.size / classified_tensors * 100
     )
-    global_data["spatial_classes"] = {
-        "absolute": {
+    global_data["spatial_classes"] = sort_dict({
+            sp_class.display_name() : sp_class_count[sp_class.display_name()]
+            for sp_class in SpatialClass
+    })
+    global_data["spatial_classes_pct"] = sort_dict({
             sp_class.display_name(): sp_class_count[sp_class.display_name()]
             for sp_class in SpatialClass
-        },
-        "pct": {
-            sp_class.display_name(): sp_class_count[sp_class.display_name()]
-            / classified_tensors
-            * 100
-            for sp_class in SpatialClass
-        },
-    }
-    global_data["domain_classes"] = (
-        {
-            "absolute": dom_class_count,
-            "pct": {
+    })
+
+    global_data["domain_classes"] = sort_dict(dom_class_count)
+    global_data["domain_classes_pct"] = sort_dict({
                 dom_class: float(freq) / golden.size / classified_tensors * 100
                 for dom_class, freq in dom_class_count.items()
-            },
-        },
-    )
-    global_data["corrupt_cardinality"] = (
-        {
-            "absolute": corrupt_cardinality,
-            "relative": {
+            })
+    global_data["corrupt_cardinality"] = sort_dict(corrupt_cardinality)
+    
+    global_data["corrupt_cardinality_pct"] = ({
                 n_errors: freq / global_data["corrupted_values"] * 100
                 for n_errors, freq in corrupt_cardinality.items()
             },
-        },
-    )
+        )
     global_data["raveled_patterns"] = OrderedDict(
         sorted(
             [
@@ -228,6 +226,7 @@ def analyze_tensor_directory(
             reverse=True,
         )
     )
+    global_data["metadata"] = metadata
     main_report["global_data"] = global_data
     main_report["tensors"] = tensor_report
 

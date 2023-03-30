@@ -1,4 +1,5 @@
 from math import sqrt
+import os
 from typing import Iterable, Tuple, Union
 
 from domain_classifier import DomainClass
@@ -53,9 +54,13 @@ def visualize(
     output_path: Union[str, None] = None,
     save: bool = False,
     show: bool = True,
+    invalidate: bool = False,
     suptitile: str = ""
 ):
     scene_dim_x, scene_dim_y = split_two(len(faulty_channels))
+
+    if not invalidate and os.path.exists(output_path):
+        return
 
     fig, axs = plt.subplots(scene_dim_x, scene_dim_y)
     if len(suptitile) > 0:
