@@ -55,7 +55,7 @@ def visualize(
     save: bool = False,
     show: bool = True,
     invalidate: bool = False,
-    suptitile: str = ""
+    suptitile: str = "",
 ):
     scene_dim_x, scene_dim_y = split_two(len(faulty_channels))
 

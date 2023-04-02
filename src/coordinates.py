@@ -11,17 +11,16 @@ class TensorLayout(Enum):
     NCHW = 1
 
     def N_index(self):
-        return self.name.index('N')
-    
+        return self.name.index("N")
+
     def H_index(self):
-        return self.name.index('H')
-    
+        return self.name.index("H")
+
     def C_index(self):
-        return self.name.index('C')
-    
+        return self.name.index("C")
+
     def W_index(self):
-        return self.name.index('W')
-    
+        return self.name.index("W")
 
 
 LAYOUTS = {

@@ -1,8 +1,10 @@
 import argparse
+import itertools
+from operator import itemgetter
 from typing import List
 import numpy as np
 import logging as log
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 import os
 from tqdm import tqdm
 import json
@@ -149,6 +151,13 @@ def main():
     log.getLogger().setLevel(log.WARN)
 
     global_report = OrderedDict()
+    global_dom_classes = defaultdict(lambda: 0)
+    global_sp_classes = defaultdict(lambda: 0)
+    global_error_patterns = defaultdict(
+        lambda: defaultdict(lambda: defaultdict(lambda: 0))
+    )
+    global_report["domain_classes"] = global_dom_classes
+    global_report["spatial_classes"] = global_sp_classes
     with tqdm(total=workload) as prog_bar:
         for batch_path in sorted(test_batches_paths):
             golden_path = os.path.join(batch_path, args.golden_path)
@@ -187,7 +196,7 @@ def main():
             metadata_path = os.path.join(faulty_path, "info.json")
 
             if os.path.exists(metadata_path):
-                with open(metadata_path, 'r') as f:
+                with open(metadata_path, "r") as f:
                     metadata = json.loads(f.read())
             else:
                 metadata = {}
@@ -200,15 +209,13 @@ def main():
 
             global_report[batch_name] = OrderedDict()
 
-
-
             for faulty_path in sorted(sub_batch_dir):
                 sub_batch_name = os.path.basename(faulty_path)
 
-                igid = sub_batch_name.split('_')[0]
-                bfm = sub_batch_name.split('_')[1]
+                igid = sub_batch_name.split("_")[0]
+                bfm = sub_batch_name.split("_")[1]
 
-                local_metadata = metadata | {'igid': igid, 'bfm': bfm}
+                local_metadata = metadata | {"igid": igid, "bfm": bfm}
 
                 report = analyze_tensor_directory(
                     faulty_path=faulty_path,
@@ -223,14 +230,46 @@ def main():
                     visualize_errors=args.visualize,
                     save_report=True,
                     prog_bar=prog_bar,
-                    metadata=local_metadata
+                    metadata=local_metadata,
                 )
+                if len(report) == 0:
+                    continue
+
+                for dom_class, count in report["global_data"]["domain_classes"].items():
+                    global_dom_classes[dom_class] += count
+                for sp_class, count in report["global_data"]["spatial_classes"].items():
+                    global_sp_classes[sp_class] += count
+                for cardinality, sp_classes in report["global_data"][
+                    "error_patterns"
+                ].items():
+                    for sp_class, patterns in sp_classes.items():
+                        for pattern, freq in patterns.items():
+                            global_error_patterns[cardinality][sp_class][
+                                pattern
+                            ] += freq
+
                 global_report[batch_name][sub_batch_name] = report["global_data"]
                 del global_report[batch_name][sub_batch_name]["raveled_patterns"]
+                del global_report[batch_name][sub_batch_name]["error_patterns"]
 
+    global_error_patterns_sorted = {
+        cardinality: {
+            sp_class: OrderedDict(
+                [
+                    (pattern, freq)
+                    for pattern, freq in sorted(patterns.items(), key=itemgetter(1), reverse=True)
+                ][:10]
+            )
+            for sp_class, patterns in sp_classes.items()
+        }
+        for cardinality, sp_classes in sorted(
+            global_error_patterns.items(), key=itemgetter(0)
+        )
+    }
     with open(os.path.join(args.output_dir, "global_report.json"), "w") as f:
         f.writelines(json.dumps(global_report, indent=2))
-
+    with open(os.path.join(args.output_dir, "error_patterns.json"), "w") as f:
+        f.writelines(json.dumps(global_error_patterns_sorted, indent=2))
 
 if __name__ == "__main__":
     main()

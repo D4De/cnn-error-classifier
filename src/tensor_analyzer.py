@@ -1,5 +1,7 @@
 from collections import OrderedDict, defaultdict
+import itertools
 import json
+from operator import itemgetter
 import os
 
 from coordinates import TensorLayout, map_to_coordinates
@@ -12,8 +14,17 @@ import numpy as np
 from visualizer import visualize
 
 
-def sort_dict(data : dict, sort_key = lambda x: x[1] , reverse = True):
-    return OrderedDict(sorted([(key, value) for key, value in data.items()], key=sort_key, reverse=reverse))
+def sort_dict(data: dict, sort_key=lambda x: x[1], reverse=True):
+    return OrderedDict(
+        sorted(
+            [(key, value) for key, value in data.items()], key=sort_key, reverse=reverse
+        )
+    )
+
+
+def numpy_coords_to_python_coord(coords: tuple):
+    return tuple(coord.item() for coord in coords)
+
 
 def analyze_tensor(
     file_path: str,
@@ -70,11 +81,12 @@ def analyze_tensor(
         log.info(f"{file_path} has no diffs with golden")
         return "masked", {}
     sparse_diff = [
-        map_to_coordinates(coords, layout) for coords in sparse_diff_native_coords
+        map_to_coordinates(numpy_coords_to_python_coord(coords), layout)
+        for coords in sparse_diff_native_coords
     ]
 
-    # Permorm spatial classifcation
-    spatial_class = spatial_classification(sparse_diff, (tensor_diff, layout))
+    # Pefmorm spatial classifcation
+    spatial_class, pattern_params = spatial_classification(sparse_diff, golden_shape)
 
     # Get faults for each channel
     # faulty_channels = {coord.C for coord in sparse_diff}
@@ -85,8 +97,9 @@ def analyze_tensor(
 
     (faulty_channels,) = np.where(channel_sums != 0)
 
-    if visualize_errors and (spatial_class == SpatialClass.RANDOM or spatial_class == SpatialClass.PHOTOCOPY):
+    if visualize_errors and (spatial_class == SpatialClass.RANDOM):
         # Create error visualization
+        filt_size = map_to_coordinates(metadata["filter_size"], layout)
         visualize(
             tensor_diff,
             faulty_channels.tolist(),
@@ -94,8 +107,8 @@ def analyze_tensor(
             spatial_class.output_path(output_dir, file_name),
             save=True,
             show=False,
-            suptitile=f'conv_{metadata["test_campaign"]} {metadata["igid"]} {metadata["bfm"]} {golden_shape.C}x{golden_shape.H}x{golden_shape.W}',
-            invalidate=True
+            suptitile=f'conv_{metadata["test_campaign"]} {metadata["igid"]} {metadata["bfm"]} {golden_shape.C}x{golden_shape.H}x{golden_shape.W} filt: {filt_size.C}x{filt_size.H}x{filt_size.W}',
+            invalidate=True,
         )
 
     raveled_offsets = (raveld_coords - raveld_coords[0]).tolist()
@@ -114,6 +127,10 @@ def analyze_tensor(
         "faulty_channels_count": len(faulty_channels),
         "raveled_start": raveld_coords[0].item(),
         "raveled_offsets": sorted(raveled_offsets),
+        "error_pattern": pattern_params["error_pattern"],
+        "block_align": pattern_params["align"]
+        if spatial_class == SpatialClass.SINGLE_BLOCK
+        else None,
     }
 
 
@@ -147,6 +164,7 @@ def analyze_tensor_directory(
     tensor_report = OrderedDict()
     corrupt_cardinality = defaultdict(lambda: 0)
     raveled_patterns = defaultdict(lambda: 0)
+    error_patterns = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))
     corrupted_values = 0
 
     # Iterate over all tensor files
@@ -159,7 +177,7 @@ def analyze_tensor_directory(
             almost_same=almost_same,
             visualize_errors=visualize_errors,
             output_dir=image_output_dir,
-            metadata=metadata
+            metadata=metadata,
         )
         if prog_bar is not None:
             prog_bar.update(1)
@@ -170,6 +188,9 @@ def analyze_tensor_directory(
             raveled_patterns[str(tensor_dict["raveled_offsets"])] += 1
             corrupt_cardinality[tensor_dict["corrupted_values"]] += 1
             corrupted_values += tensor_dict["corrupted_values"]
+            error_patterns[tensor_dict["corrupted_values"]][sp_class][
+                str(tensor_dict["error_pattern"])
+            ] += 1
             for dom_class, freq in tensor_dict["domain_classes"].items():
                 dom_class_count[dom_class] += freq
 
@@ -191,30 +212,38 @@ def analyze_tensor_directory(
     global_data["skipped"] = sp_class_count["skipped"]
     global_data["classified_tensors"] = classified_tensors
     global_data["corrupted_values"] = corrupted_values
+    global_data["error_patterns"] = error_patterns
     global_data["average_corrupted_values_pct"] = (
         float(corrupted_values) / golden.size / classified_tensors * 100
     )
-    global_data["spatial_classes"] = sort_dict({
-            sp_class.display_name() : sp_class_count[sp_class.display_name()]
-            for sp_class in SpatialClass
-    })
-    global_data["spatial_classes_pct"] = sort_dict({
+    global_data["spatial_classes"] = sort_dict(
+        {
             sp_class.display_name(): sp_class_count[sp_class.display_name()]
             for sp_class in SpatialClass
-    })
+        }
+    )
+    global_data["spatial_classes_pct"] = sort_dict(
+        {
+            sp_class.display_name(): sp_class_count[sp_class.display_name()]
+            for sp_class in SpatialClass
+        }
+    )
 
     global_data["domain_classes"] = sort_dict(dom_class_count)
-    global_data["domain_classes_pct"] = sort_dict({
-                dom_class: float(freq) / golden.size / classified_tensors * 100
-                for dom_class, freq in dom_class_count.items()
-            })
+    global_data["domain_classes_pct"] = sort_dict(
+        {
+            dom_class: float(freq) / golden.size / classified_tensors * 100
+            for dom_class, freq in dom_class_count.items()
+        }
+    )
     global_data["corrupt_cardinality"] = sort_dict(corrupt_cardinality)
-    
-    global_data["corrupt_cardinality_pct"] = ({
-                n_errors: freq / global_data["corrupted_values"] * 100
-                for n_errors, freq in corrupt_cardinality.items()
-            },
-        )
+
+    global_data["corrupt_cardinality_pct"] = (
+        {
+            n_errors: freq / global_data["corrupted_values"] * 100
+            for n_errors, freq in corrupt_cardinality.items()
+        },
+    )
     global_data["raveled_patterns"] = OrderedDict(
         sorted(
             [
@@ -226,7 +255,7 @@ def analyze_tensor_directory(
             reverse=True,
         )
     )
-    global_data["metadata"] = metadata
+    main_report["metadata"] = metadata
     main_report["global_data"] = global_data
     main_report["tensors"] = tensor_report
 
