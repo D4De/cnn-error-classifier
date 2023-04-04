@@ -6,7 +6,7 @@ import os
 
 from coordinates import TensorLayout, map_to_coordinates
 from domain_classifier import DomainClass
-from spatial_classifier import SpatialClass, spatial_classification
+from spatial_classifier import SpatialClass, accumulate_max, spatial_classification
 from domain_classifier import domain_classification_vect
 import logging as log
 import numpy as np
@@ -97,7 +97,7 @@ def analyze_tensor(
 
     (faulty_channels,) = np.where(channel_sums != 0)
 
-    if visualize_errors and (spatial_class == SpatialClass.RANDOM):
+    if visualize_errors:
         # Create error visualization
         filt_size = map_to_coordinates(metadata["filter_size"], layout)
         visualize(
@@ -115,6 +115,7 @@ def analyze_tensor(
     # Per tensor report generator
     return spatial_class.display_name(), {
         "class": spatial_class.display_name(),
+        "class_params": pattern_params,
         "domain_classes": {
             clz.display_name(): temp_dom_class_count[i].item()
             for i, clz in enumerate(DomainClass)
@@ -165,6 +166,7 @@ def analyze_tensor_directory(
     corrupt_cardinality = defaultdict(lambda: 0)
     raveled_patterns = defaultdict(lambda: 0)
     error_patterns = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))
+    class_params = defaultdict(lambda: defaultdict(list))
     corrupted_values = 0
 
     # Iterate over all tensor files
@@ -184,13 +186,18 @@ def analyze_tensor_directory(
         sp_class_count[sp_class] += 1
 
         if sp_class != "masked" and sp_class != "skipped":
+            error_pattern = str(tensor_dict["error_pattern"])
+            corr_val_count = tensor_dict["corrupted_values"]
+
             tensor_report[os.path.basename(file_path)] = tensor_dict
             raveled_patterns[str(tensor_dict["raveled_offsets"])] += 1
             corrupt_cardinality[tensor_dict["corrupted_values"]] += 1
             corrupted_values += tensor_dict["corrupted_values"]
-            error_patterns[tensor_dict["corrupted_values"]][sp_class][
-                str(tensor_dict["error_pattern"])
-            ] += 1
+            error_patterns[corr_val_count][sp_class][error_pattern] += 1
+            class_params[corr_val_count][sp_class] = accumulate_max(
+                class_params[corr_val_count][sp_class],
+                tensor_dict["class_params"]["MAX"] if "MAX" in tensor_dict["class_params"] else [],
+            )
             for dom_class, freq in tensor_dict["domain_classes"].items():
                 dom_class_count[dom_class] += freq
 
@@ -213,6 +220,7 @@ def analyze_tensor_directory(
     global_data["classified_tensors"] = classified_tensors
     global_data["corrupted_values"] = corrupted_values
     global_data["error_patterns"] = error_patterns
+    global_data["class_params"] = class_params
     global_data["average_corrupted_values_pct"] = (
         float(corrupted_values) / golden.size / classified_tensors * 100
     )

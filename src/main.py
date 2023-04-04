@@ -9,14 +9,17 @@ import os
 from tqdm import tqdm
 import json
 import sys
+from domain_classifier import DomainClass
 from tensor_analyzer import analyze_tensor_directory
 
 REPORT_FILE = "report.json"
 TOP_PATTERNS_PCT = 5
 
 from spatial_classifier import (
+    accumulate_max,
     clear_spatial_classification_folders,
     create_visual_spatial_classification_folders,
+    to_classes_id,
 )
 
 from coordinates import TensorLayout, map_to_coordinates
@@ -99,6 +102,18 @@ def main():
         default=1e-3,
         help="Set epsilon value. Differences below epsilon are treated as almost same value and are not plotted (unless -as is enabled)",
     )
+    parser.add_argument(
+        "-pr",
+        "--partial-reports",
+        action="store_true",
+        help="Generate partial reports",
+    )
+    parser.add_argument(
+        "--classes",
+        nargs=2,
+        metavar=("Sx", "OPERATION"),
+        help="Generate files for running classes",
+    )
 
     tensor_format_group = parser.add_mutually_exclusive_group()
     tensor_format_group.add_argument(
@@ -118,18 +133,20 @@ def main():
 
     # Read layout from args (default is NCHW)
     layout = TensorLayout.NHWC if args.nhwc else TensorLayout.NCHW
-
+    # Get all the tests batches paths (a batch is a folder inside the root path)
     test_batches_paths = [
         os.path.join(args.root_path, dir)
         for dir in os.listdir(args.root_path)
         if os.path.isdir(os.path.join(args.root_path, dir))
     ]
 
+    # Slice the batches (for testing purposes)
     if args.limit is not None:
         test_batches_paths = test_batches_paths[: args.limit]
 
     log.info(f"Found {len(test_batches_paths)} batches to analyze")
 
+    # Generate output paths
     visualize_path = os.path.join(args.output_dir, "visualize")
     reports_path = os.path.join(args.output_dir, "reports")
 
@@ -139,23 +156,32 @@ def main():
     if not os.path.exists(reports_path):
         os.mkdir(reports_path)
 
+    # Folder for visualizations must be erased only if new one are generated
     if args.visualize:
         clear_spatial_classification_folders(visualize_path)
         # Create output folder structure (if not exists already)
         create_visual_spatial_classification_folders(visualize_path)
-
+    # workload == number of tensors to analyze in all batches (for progress bar)
     workload = precalculate_workload(test_batches_paths, args.faulty_path)
 
     log.info(f"Found {workload} tensors to analyze")
-
+    # Mute logger to avoid interferences with tqdm
     log.getLogger().setLevel(log.WARN)
 
+    # Initialize global dictionaries
     global_report = OrderedDict()
     global_dom_classes = defaultdict(lambda: 0)
     global_sp_classes = defaultdict(lambda: 0)
+    # global_error_patterns[cardinality][spatial class name][pattern (stringfied tuple)] -> frequency of the pattern
     global_error_patterns = defaultdict(
         lambda: defaultdict(lambda: defaultdict(lambda: 0))
     )
+    global_class_params = defaultdict(
+        lambda: defaultdict(list)
+    )
+    # global_error_patterns[cardinality][spatial class name] -> frequency of the spatial class with that cardinailty
+    global_cardinalities = defaultdict(lambda: defaultdict(lambda: 0))
+    # Global bind dictionaries to global dict (that will be ouptu in json)
     global_report["domain_classes"] = global_dom_classes
     global_report["spatial_classes"] = global_sp_classes
     with tqdm(total=workload) as prog_bar:
@@ -168,7 +194,7 @@ def main():
                     f"Skipping {batch_name} batch since it does not contain golden tensor"
                 )
 
-            # Load golden from file
+            # Load golden file for the batch
             try:
                 golden: np.ndarray = np.load(golden_path)
             except:
@@ -181,7 +207,7 @@ def main():
                 )
                 continue
 
-            # Remap coordinates using Coordinate namedtuple
+            # Remap coordinates using Coordinate namedtuple (to be compatible with NHWC and NCHW)
             golden_shape = map_to_coordinates(golden.shape, layout)
             log.info(f"Golden tensor ({args.golden_path}) loaded. Shape {golden_shape}")
 
@@ -192,7 +218,7 @@ def main():
                     f"Skipping {batch_name} batch. Could not open path to faulty path"
                 )
                 continue
-
+            # read batch metadata (info.json)
             metadata_path = os.path.join(faulty_path, "info.json")
 
             if os.path.exists(metadata_path):
@@ -208,10 +234,11 @@ def main():
             ]
 
             global_report[batch_name] = OrderedDict()
-
+            prog_bar.set_description(batch_name)
+            # Read batch subdirectory
             for faulty_path in sorted(sub_batch_dir):
                 sub_batch_name = os.path.basename(faulty_path)
-
+                # (I)struction (G)roup (ID) and (B)it (F)lip (M)odel are inferend from the folder name (separated by _)
                 igid = sub_batch_name.split("_")[0]
                 bfm = sub_batch_name.split("_")[1]
 
@@ -228,13 +255,13 @@ def main():
                     almost_same=args.almost_same,
                     image_output_dir=visualize_path,
                     visualize_errors=args.visualize,
-                    save_report=True,
+                    save_report=args.partial_reports,
                     prog_bar=prog_bar,
                     metadata=local_metadata,
                 )
                 if len(report) == 0:
                     continue
-
+                # accumulate values to add in globa dicts
                 for dom_class, count in report["global_data"]["domain_classes"].items():
                     global_dom_classes[dom_class] += count
                 for sp_class, count in report["global_data"]["spatial_classes"].items():
@@ -242,23 +269,73 @@ def main():
                 for cardinality, sp_classes in report["global_data"][
                     "error_patterns"
                 ].items():
+                    total = 0
                     for sp_class, patterns in sp_classes.items():
+                        total += len(patterns)
+                        global_cardinalities[cardinality][sp_class] += len(patterns)
                         for pattern, freq in patterns.items():
                             global_error_patterns[cardinality][sp_class][
                                 pattern
                             ] += freq
-
+                    global_cardinalities[cardinality]["sum"] = total
+                for cardinality, sp_classes in report["global_data"]["class_params"].items():
+                    for sp_class, max_val in sp_classes.items():
+                        global_class_params[cardinality][sp_class] = accumulate_max(global_class_params[cardinality][sp_class], max_val)
                 global_report[batch_name][sub_batch_name] = report["global_data"]
+                # remove verbose data from global report
                 del global_report[batch_name][sub_batch_name]["raveled_patterns"]
                 del global_report[batch_name][sub_batch_name]["error_patterns"]
+
+    global_cardinalities_count = OrderedDict(
+        sorted(
+            (
+                (
+                    cardinality,
+                    sum(
+                        sum(freq for freq in patterns.values())
+                        for patterns in sp_classes.values()
+                    ),
+                )
+                for cardinality, sp_classes in global_error_patterns.items()
+            ),
+            key=itemgetter(1),
+            reverse=True,
+        )
+    )
+
+    global_cardinalities_sorted = {
+        cardinality: {
+            sp_class: sum(freq for freq in patterns.values())
+            for sp_class, patterns in sorted(sp_classes.items(), key=itemgetter(0))
+        }
+        for cardinality, sp_classes in global_error_patterns.items()
+    }
+
+    total_classified_tensors = sum(
+        pattern_freq for pattern_freq in global_cardinalities_count.values()
+    )
 
     global_error_patterns_sorted = {
         cardinality: {
             sp_class: OrderedDict(
                 [
-                    (pattern, freq)
-                    for pattern, freq in sorted(patterns.items(), key=itemgetter(1), reverse=True)
-                ][:10]
+                    (pattern, freq / global_cardinalities_sorted[cardinality][sp_class])
+                    for pattern, freq in sorted(
+                        patterns.items(), key=itemgetter(1), reverse=True
+                    )
+                    if freq / global_cardinalities_sorted[cardinality][sp_class] >= 0.05
+                ]
+                + [
+                    (
+                        "RANDOM",
+                        sum(
+                            freq / global_cardinalities_sorted[cardinality][sp_class]
+                            for freq in patterns.values()
+                            if freq / global_cardinalities_sorted[cardinality][sp_class]
+                            <= 0.05
+                        ),
+                    )
+                ]
             )
             for sp_class, patterns in sp_classes.items()
         }
@@ -266,10 +343,86 @@ def main():
             global_error_patterns.items(), key=itemgetter(0)
         )
     }
+
+    if args.classes is not None:
+        classes_cardinalities = {
+            cardinality: [freq, freq / total_classified_tensors]
+            for cardinality, freq in global_cardinalities_count.items()
+        }
+
+        classes_spatial_models = {
+            cardinality: {
+                "FF": {
+                    to_classes_id(sp_class): global_cardinalities_sorted[cardinality][
+                        sp_class
+                    ]
+                    / global_cardinalities_count[cardinality]
+                    for sp_class in sp_classes
+                },
+                "PF": {
+                    to_classes_id(sp_class): {
+                        pattern: freq
+                        for pattern, freq in global_error_patterns_sorted[cardinality][
+                            sp_class
+                        ].items()
+                    }| {"MAX": global_class_params[cardinality][sp_class]}
+                    for sp_class in sp_classes
+                },
+            }
+            for cardinality, sp_classes in sorted(
+                global_error_patterns.items(), key=itemgetter(0)
+            )
+        }
+
+        classes_spatial_models[1] = {"RANDOM": 1}
+
+        dom_class = {
+            "plus_minus_one": global_dom_classes[DomainClass.OFF_BY_ONE.display_name()],
+            "others": global_dom_classes[DomainClass.RANDOM.display_name()],
+            "zeros": global_dom_classes[DomainClass.ZERO.display_name()],
+            "NaN": global_dom_classes[DomainClass.NAN.display_name()],
+        }
+
+        total = sum(freq for freq in dom_class.values())
+
+        dom_class = {dom_class: freq / total for dom_class, freq in dom_class.items()}
+
+        dom_class["total"] = total
+
+        classes_domain_models = """There have been {total} faults
+            [-1, 1]: {plus_minus_one}
+            Others: {others}
+            NaN: {NaN}
+            Zeros: {zeros}
+            Valid: 1.00000
+        """.format(
+            **dom_class
+        )
+        with open(os.path.join(args.output_dir, "value_analysis.txt"), "w") as f:
+            f.write(classes_domain_models)
+        with open(
+            os.path.join(
+                args.output_dir,
+                f"{args.classes[0]}_{args.classes[1]}_spatial_model.json",
+            ),
+            "w",
+        ) as f:
+            f.write(json.dumps(classes_spatial_models, indent=2))
+        with open(
+            os.path.join(
+                args.output_dir,
+                f"{args.classes[1]}_{args.classes[0]}_anomalies_count.json",
+            ),
+            "w",
+        ) as f:
+            f.write(json.dumps(classes_cardinalities, indent=2))
+
+    global_report["classified_tensors"] = total_classified_tensors
+    global_report["classes_by_cardinalities"] = global_cardinalities_sorted
+    global_report["cardinalities"] = global_cardinalities_count
     with open(os.path.join(args.output_dir, "global_report.json"), "w") as f:
         f.writelines(json.dumps(global_report, indent=2))
-    with open(os.path.join(args.output_dir, "error_patterns.json"), "w") as f:
-        f.writelines(json.dumps(global_error_patterns_sorted, indent=2))
+
 
 if __name__ == "__main__":
     main()
