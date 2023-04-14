@@ -1,6 +1,6 @@
 from itertools import groupby
 from operator import itemgetter
-from typing import Callable, Dict, Iterable, Literal, Tuple, Union
+from typing import Callable, Dict, Iterable, List, Literal, Tuple, Union
 from collections import OrderedDict, defaultdict
 
 import numpy as np
@@ -13,15 +13,19 @@ import shutil
 def to_classes_id(name) -> str:
     if name == SpatialClass.SAME_ROW.display_name():
         return "0"
+    elif name == SpatialClass.SAME_COLUMN.display_name():
+        return "1"
     elif name == SpatialClass.SINGLE_MAP_RANDOM.display_name():
         return "3"
     elif name == SpatialClass.BULLET_WAKE.display_name():
         return "4"
     elif name == SpatialClass.SHATTERED_GLASS.display_name():
         return "6"
+    elif name == SpatialClass.QUASI_SHATTERED_GLASS.display_name():
+        return "7"
     elif name == SpatialClass.SKIP_4.display_name():
         return "9"
-    elif name == SpatialClass.SINGLE_BLOCK.display_name():
+    elif name == SpatialClass.CHANNEL_ALIGNED_SAME_BLOCK.display_name():
         return "10"
     elif name == SpatialClass.MULTIPLE_MAP_RANDOM.display_name():
         return "8"
@@ -30,16 +34,17 @@ def to_classes_id(name) -> str:
 class SpatialClass(Enum):
     SAME = 0
     SINGLE = 1
-    SAME_ROW = 2
-    SINGLE_MAP_RANDOM = 3
-    BULLET_WAKE = 4
-    SHATTERED_GLASS = 5
-    #    SINGLE_BLOCK_SINGLE_CHANNEL = 6
-    #    SINGLE_BLOCK_MULTI_CHANNEL = 7
-    #    SKIP_4_MULTI_CHANNEL = 9
-    SKIP_4 = 6
-    SINGLE_BLOCK = 7
-    MULTIPLE_MAP_RANDOM = 8
+    SAME_COLUMN = 2
+    SAME_ROW = 3
+    SINGLE_MAP_RANDOM = 4
+    BULLET_WAKE = 5
+    SHATTERED_GLASS = 6
+    QUASI_SHATTERED_GLASS = 7
+    SKIP_4 = 8
+    CHANNEL_ALIGNED_SAME_BLOCK = 9
+    MULTIPLE_MAP_RANDOM = 10
+    CHANNEL_ALIGNED_SINGLE_BLOCK = 11
+    TENSOR_ALIGNED_SINGLE_BLOCK = 12
 
     def to_classes_id(self) -> str:
         if self == SpatialClass.SAME_ROW:
@@ -52,10 +57,15 @@ class SpatialClass(Enum):
             return "6"
         elif self == SpatialClass.SKIP_4:
             return "9"
-        elif self == SpatialClass.SINGLE_BLOCK:
+        elif self == SpatialClass.CHANNEL_ALIGNED_SAME_BLOCK:
             return "10"
         elif self == SpatialClass.MULTIPLE_MAP_RANDOM:
             return "8"
+        elif self == SpatialClass.CHANNEL_ALIGNED_SINGLE_BLOCK:
+            return "10"
+        elif self == SpatialClass.TENSOR_ALIGNED_SINGLE_BLOCK:
+            return "12"
+
 
     def display_name(self) -> str:
         return self.name.lower()
@@ -104,6 +114,34 @@ def same_row_classifier(
         "error_pattern": tuple(sorted(coord.W - min_w for coord in sparse_diff)),
         "max_w_offset": max_w_offset,
         "MAX": [max_w_offset],
+    }
+
+def same_column_classifier(
+    sparse_diff: Iterable[Coordinates],
+    shape: Coordinates,
+    corr_channels: Iterable[int],
+) -> Tuple[bool, Dict[str, any]]:
+    """
+    Return True if a bullet Wake spatial distribution is recognized
+    Same Row: multiple corrupted values lie in the same row (same feature map)
+    """
+    first_N = sparse_diff[0].N
+    first_C = sparse_diff[0].C
+    first_W = sparse_diff[0].W
+    for coordinates in sparse_diff:
+        if (
+            coordinates.N != first_N
+            or coordinates.C != first_C
+            or coordinates.W != first_W
+        ):
+            return False, {}
+    all_hs = [coord.W for coord in sparse_diff]
+    min_h = min(all_hs)
+    max_h_offset = max(all_hs) - min_h
+    return True, {
+        "error_pattern": tuple(sorted(coord.W - min_h for coord in sparse_diff)),
+        "max_h_offset": max_h_offset,
+        "MAX": [max_h_offset],
     }
 
 
@@ -187,10 +225,58 @@ def shattered_glass_classifier(
         return False, {}
 
 
+def quasi_shattered_glass_classifier(
+    sparse_diff: Iterable[Coordinates],
+    shape: Coordinates,
+    corr_channels: Iterable[int],
+) -> Tuple[bool, Dict[str, any]]:
+    """
+    Return True if a Shattered Glass spatial distribution is recognized.
+    Shattered glass: like one or more Bullet wake errors, but in one or multiple feature maps the corruption spreads over a row (or part of the row)
+    """
+    # Common Row Index
+    first_H = sparse_diff[0].H
+    cols_by_channels = defaultdict(lambda: set())
+    channels_by_cols = defaultdict(lambda: set())
+    for coord in sparse_diff:
+        # To be Shattered Glass all corruption must stay on the same row of different feature map
+        if coord.H != first_H:
+            return False, {}
+        cols_by_channels[coord.C].add(coord.W)
+        channels_by_cols[coord.W].add(coord.C)
+    if len(cols_by_channels) == 0:
+        return False, {}
+    common_cols = {col : len(channel_set) for col, channel_set in channels_by_cols.items() if len(channel_set) >= 1}
+    if len(common_cols) > 0:
+        common_element_col = max(common_cols.items(), key=itemgetter(1))
+        smallest_chan = min(coord.C for coord in sparse_diff)
+        max_c_offset = max(coord.C for coord in sparse_diff) - smallest_chan
+        error_pattern = tuple(
+            (
+                chan - smallest_chan,
+                tuple(col - common_element_col for col in sorted(cols)),
+            )
+            for chan, cols in sorted(cols_by_channels.items(), key=itemgetter(0))
+        )
+        min_w_offset = min(coord.W - common_element_col for coord in sparse_diff)
+        max_w_offset = max(coord.W - common_element_col for coord in sparse_diff)
+        feature_maps_count = len(cols_by_channels)
+        return True, {
+            "error_pattern": error_pattern,
+            "min_w_offset": min_w_offset,
+            "max_w_offset": max_w_offset,
+            "max_c_offset": max_c_offset,
+            "feature_maps_count": feature_maps_count,
+            "MAX": [feature_maps_count, max_c_offset, min_w_offset, max_w_offset],
+        }
+    else:
+        return False, {}
+
+
 def raveled_channel_index(shape: Coordinates, coordinate: Coordinates) -> int:
     """
-    Take the shape of a tensor and a coordinate. coordinate must be within the shape
-    Returns the raveled index of a channel. For example if the channel HxW dimensions are 8x16
+    Takes in input the shape of a tensor and a coordinate. coordinate must be within the shape
+    Returns the raveled index inside the  channel. For example if the channel HxW dimensions are 8x16
     and the coordinates are H: 4, W: 8 (the other dimensions are ignored) the raveled index will be 8 * 16 + 4.
 
     This index reflects the fact that the channel is raveled inside the memory using a row major order, so the last item of a row is
@@ -198,28 +284,34 @@ def raveled_channel_index(shape: Coordinates, coordinate: Coordinates) -> int:
     """
     return coordinate.W + shape.W * coordinate.H
 
+def raveled_tensor_index(shape: Coordinates, coordinate: Coordinates) -> int:
+    """
+    Takes in input the shape of a tensor and a coordinate. coordinate must be within the shape
+    Returns the raveled index inside the tensor. For example if the channel HxW dimensions are 8x16 and the
+    and the coordinates are C: 2 H: 4, W: 8 (the other dimensions are ignored) the raveled index will be 8 * 16 + 4 + 2 * 4 * 8.
 
-def multi_channel_single_block_pattern(
+    This index reflects the fact that the channel is raveled inside the memory using a row major order, so the last item of a row is
+    followed by the first item of the next row, and that the channel are stored in memory contigously
+    """
+    return coordinate.C * (shape.H * shape.W) + shape.W * coordinate.H + coordinate.W 
+
+
+def channel_aligned_same_block_pattern(
     sparse_diff: Iterable[Coordinates],
     shape: Coordinates,
     corr_channels: Iterable[int],
 ) -> Tuple[bool, Dict[str, any]]:
     """
-    Returns True if a Single Block spatial distribution is recognized.
+    Returns True if a Channel Aligned Same Block spatial distribution is recognized.
 
-    A block of errors is made of [max_align] errors that are contiguos in memory. max_aligns is also the aligment of the block and must be 8, 16 or 32.
+    A block of errors is made of [max_align] errors that are contiguos in memory. max_aligns is also the aligment of the block and must be 16, 32 or 64.
     If the block is compatible with multiple aligments, only the biggest max_align is selected. The aligment is counted from the element 0,0 of each channel,
     in a row major order (like it is represented in memory).
 
-    To match with this error there must be at least a channel (that will be called the leader channel) where there are at least [max_align - tolerance]
+    To match with this error there must be at least a channel (that will be called the leader channel) where there are at least [max_align - max_align >> 1 + 1]
     erroneous values, all contained inside a single block of dimension max_aligned aligned from the channel start.
     There must not be other erroneous values outside the the block.
     If there is more than one corrupted channel, the other corrupted channels must have errors ONLY inside the very same corrupted block.
-
-    The value of tolerance depends on max_align:
-    * max_align = 8 -> tolerance = 1
-    * max_align = 16 -> tolerance = 2
-    * max_align = 32 -> tolerance = 4
 
     Example 1:
     Channel 0 (6x6) has errors in 10, 14
@@ -248,12 +340,12 @@ def multi_channel_single_block_pattern(
     for channel in corr_channels:
         corrupted_items = sum(1 for coord in sparse_diff if coord.C == channel)
         # tolerance value
-        if 7 <= corrupted_items <= 8:
-            align = 8
-        elif 9 <= corrupted_items <= 16:
+        if 10 <= corrupted_items <= 16:
             align = 16
-        elif 17 <= corrupted_items <= 32:
+        if 17 <= corrupted_items <= 32:
             align = 32
+        elif 34 <= corrupted_items <= 64:
+            align = 64
         else:
             continue
         if align > max_align:
@@ -294,6 +386,42 @@ def multi_channel_single_block_pattern(
         return False, {}
 
 
+def tensor_aligned_single_block_pattern(
+    sparse_diff: Iterable[Coordinates],
+    shape: Coordinates,
+    corr_channels: Iterable[int],
+) -> Tuple[bool, Dict[str, any]]:
+    """
+    Returns True if a Channel Aligned Same Block spatial distribution is recognized.
+
+    """
+    raveled_fault_indexes = sorted([raveled_tensor_index(shape, coord) for coord in sparse_diff])
+    corrupted_items_count = len(sparse_diff)
+    aligments = [16,32,64]
+    if corrupted_items_count < min(aligments) // 2:
+        return False, {}
+
+    min_align = None
+    block_id = None
+    for align in aligments:
+        align_set = {x // align for x in raveled_fault_indexes}
+        if len(align_set) != 1:
+            continue
+        else:
+            min_align = align
+            block_id = next(iter(align_set))
+            break
+    if min_align is None or corrupted_items_count < min_align // 2:
+        return False, {}
+    block_begin = block_id * min_align
+    error_pattern = (min_align,  tuple(idx - block_begin for idx in raveled_fault_indexes))
+    return True, {
+        "error_pattern": error_pattern,
+        "align": min_align,
+        "MAX": [],
+    }
+    
+
 def multi_channel_skip_4_pattern(
     sparse_diff: Iterable[Coordinates],
     shape: Coordinates,
@@ -322,7 +450,7 @@ def multi_channel_skip_4_pattern(
     # all the other positions
     wrong_positions = coordinates - candidate_positions
 
-    if len(good_positions) >= 3 and len(wrong_positions) <= 3:
+    if len(good_positions) >= 2 and len(wrong_positions) <= 3:
         # Generate the error_pattern
         indexes_by_channel = defaultdict(list)
         min_c = min(coord.C for coord in sparse_diff)
@@ -367,8 +495,19 @@ def random_classifier(
         )
     return True, {"error_pattern": error_pattern}
 
+SINGLE_CHANNEL_CLASSIFIERS: Dict[SpatialClass,     Callable[
+        [Iterable[Coordinates], Coordinates, Iterable[int]],
+        Tuple[bool, Dict[str, any]],
+    ],] = OrderedDict([
+            (SpatialClass.SINGLE, single_classifier),
+            (SpatialClass.SKIP_4, multi_channel_skip_4_pattern),
+            (SpatialClass.TENSOR_ALIGNED_SINGLE_BLOCK, tensor_aligned_single_block_pattern),
+            (SpatialClass.CHANNEL_ALIGNED_SINGLE_BLOCK, channel_aligned_same_block_pattern),
+            (SpatialClass.SAME_ROW, same_row_classifier),
+            (SpatialClass.SINGLE_MAP_RANDOM, random_classifier),
+    ])
 
-SINGLE_CHANNEL_CLASSIFIERS: Dict[
+SINGLE_CHANNEL_CLASSIFIERS_OLD: Dict[
     SpatialClass,
     Callable[
         [Iterable[Coordinates], Coordinates, Iterable[int]],
@@ -377,10 +516,25 @@ SINGLE_CHANNEL_CLASSIFIERS: Dict[
 ] = OrderedDict(
     [
         (SpatialClass.SINGLE, single_classifier),
-        (SpatialClass.SKIP_4, multi_channel_skip_4_pattern),
-        (SpatialClass.SINGLE_BLOCK, multi_channel_single_block_pattern),
         (SpatialClass.SAME_ROW, same_row_classifier),
+        (SpatialClass.SAME_COLUMN, same_column_classifier),
         (SpatialClass.SINGLE_MAP_RANDOM, random_classifier),
+    ]
+) 
+
+
+MULTI_CHANNEL_CLASSIFIERS_OLD: Dict[
+    SpatialClass,
+    Callable[
+        [Iterable[Coordinates], Coordinates, Iterable[int]],
+        Tuple[bool, Dict[str, any]],
+    ],
+] = OrderedDict(
+    [
+        (SpatialClass.BULLET_WAKE, bullet_wake_classifier),
+        (SpatialClass.SHATTERED_GLASS, shattered_glass_classifier),
+        (SpatialClass.QUASI_SHATTERED_GLASS, quasi_shattered_glass_classifier),
+        (SpatialClass.MULTIPLE_MAP_RANDOM, random_classifier),
     ]
 )
 
@@ -394,7 +548,8 @@ MULTI_CHANNEL_CLASSIFIERS: Dict[
     [
         (SpatialClass.BULLET_WAKE, bullet_wake_classifier),
         (SpatialClass.SKIP_4, multi_channel_skip_4_pattern),
-        (SpatialClass.SINGLE_BLOCK, multi_channel_single_block_pattern),
+        (SpatialClass.CHANNEL_ALIGNED_SAME_BLOCK, channel_aligned_same_block_pattern),
+        (SpatialClass.TENSOR_ALIGNED_SINGLE_BLOCK, tensor_aligned_single_block_pattern),
         (SpatialClass.SHATTERED_GLASS, shattered_glass_classifier),
         (SpatialClass.MULTIPLE_MAP_RANDOM, random_classifier),
     ]
@@ -436,16 +591,32 @@ def clear_spatial_classification_folders(output_path: str):
         shutil.rmtree(class_path, ignore_errors=True)
 
 
-def accumulate_max(curr_vector, new_vector):
-    res = [0 for _ in range(len(new_vector))]
-    for i in range(len(new_vector)):
+def accumulate_max(curr_max_list : List[int], new_list : List[int]) -> List[int]:
+    """
+    Returns a list containing, at each position, the maximum value between the two same positions at curr_max_list and new_list.
+    The maximum is calculated between the absolute values of two number. But in the output the sign is kept as the original
+    
+    (Example max'(-4, 2) = -4. max'(-1, 7) = 7)
+    
+    new_list must be at least long as curr_max_list. If the values of new_list in the positions exceeding exceeding the length of curr_max_list
+    will be automatically put in the output list with their original sings.
 
-        if i >= len(curr_vector):
-            res[i] = new_vector[i]
+    Example:
+    ```
+    accumulate_max([2, -1, 7], [-1, 4, 6, -9, 3]) = [2, 4, 7, -9, 3]
+
+    accumulate_max([-1, 4, 6, -9, 3], [2, -1, 7])  -> Error
+    ```
+    """
+    res = [0 for _ in range(len(new_list))]
+    for i in range(len(new_list)):
+
+        if i >= len(curr_max_list):
+            res[i] = new_list[i]
         else:
-            a, b = abs(curr_vector[i]), abs(new_vector[i])
+            a, b = abs(curr_max_list[i]), abs(new_list[i])
             if a > b:
-                res[i] = curr_vector[i]
+                res[i] = curr_max_list[i]
             else:
-                res[i] = new_vector[i]
+                res[i] = new_list[i]
     return res

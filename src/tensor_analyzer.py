@@ -73,7 +73,7 @@ def analyze_tensor(
         temp_dom_class_count[cat[i]] = counts[i]
 
     # Generate a list of all coordinates where a difference is observed (Sparse matrix)
-    sparse_diff_native_coords = list(zip(*np.where(np.abs(golden - faulty) > epsilon)))
+    sparse_diff_native_coords = list(zip(*np.where(tensor_diff > 0)))
     (raveld_coords,) = np.where(np.ravel(tensor_diff) > 1)
 
     # No diff = masked
@@ -99,6 +99,7 @@ def analyze_tensor(
 
     if visualize_errors:
         # Create error visualization
+        suptitle_id = metadata["test_campaign"] if "test_campaign" in metadata else metadata["test_id"] if "test_id" in metadata else '?'
         filt_size = map_to_coordinates(metadata["filter_size"], layout)
         visualize(
             tensor_diff,
@@ -107,7 +108,7 @@ def analyze_tensor(
             spatial_class.output_path(output_dir, file_name),
             save=True,
             show=False,
-            suptitile=f'conv_{metadata["test_campaign"]} {metadata["igid"]} {metadata["bfm"]} {golden_shape.C}x{golden_shape.H}x{golden_shape.W} filt: {filt_size.C}x{filt_size.H}x{filt_size.W}',
+            suptitile=f'conv_{suptitle_id} {metadata["igid"]} {metadata["bfm"]} {golden_shape.C}x{golden_shape.H}x{golden_shape.W} filt: {filt_size.C}x{filt_size.H}x{filt_size.W}',
             invalidate=True,
         )
 
@@ -130,7 +131,7 @@ def analyze_tensor(
         "raveled_offsets": sorted(raveled_offsets),
         "error_pattern": pattern_params["error_pattern"],
         "block_align": pattern_params["align"]
-        if spatial_class == SpatialClass.SINGLE_BLOCK
+        if spatial_class == SpatialClass.CHANNEL_ALIGNED_SAME_BLOCK
         else None,
     }
 

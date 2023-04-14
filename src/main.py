@@ -344,12 +344,31 @@ def main():
         )
     }
 
+    # Generate the json files of errors models needed in the CLASSES framework (if option --classes is specified in arguments)
     if args.classes is not None:
+        # Cardinality file
+        # Keys: All the cardinalities (number of errors in each tensors)
+        # Values: Relative frequency of the cardinality [0,1]
         classes_cardinalities = {
             cardinality: [freq, freq / total_classified_tensors]
             for cardinality, freq in global_cardinalities_count.items()
         }
 
+        # Spatial model file
+        # Keys: All the cardinalities (number of errors in each tensors)
+        # Values: A dict containing two keys
+            # Keys:
+                # "FF": A dict:
+                    # Keys: The CLASSES id of a spatial class of error patterns (see SpatialClass.to_classes_id()) 
+                    # Values: relative frequency of the pattern given the cardinality (all values must sum to 1)
+                # "PF": A dict:
+                    # Keys: The CLASSES id of a spatial class of error patterns (see SpatialClass.to_classes_id()) 
+                    # Values: A dict
+                        # Keys: The string representing the pattern (usually multiple nested tuple converted to str, structure varies depending on spatial class)
+                        #       "RANDOM", "MAX" are other two keys that may appear
+                        # Values: The relative frequency of the pattern. All the values associated to a tuple + the value of "RANDOM" MUST sum to 1
+                        #       "RANDOM" value is the probability that the pattern is different from all the listed patterns
+                        #       "MAX" values contains max parameters of the pattern, may be an int or a list 
         classes_spatial_models = {
             cardinality: {
                 "FF": {
@@ -388,7 +407,7 @@ def main():
         dom_class = {dom_class: freq / total for dom_class, freq in dom_class.items()}
 
         dom_class["total"] = total
-
+        # A string containing data about domains of the errors. Bitflip and Same must be excluded from the domains even if it figures in DomainClasses
         classes_domain_models = """There have been {total} faults
             [-1, 1]: {plus_minus_one}
             Others: {others}
