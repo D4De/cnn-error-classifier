@@ -143,6 +143,8 @@ def main():
     # Slice the batches (for testing purposes)
     if args.limit is not None:
         test_batches_paths = test_batches_paths[: args.limit]
+    
+    test_batches_paths = [path for path in test_batches_paths if not os.path.basename(path).startswith('_')]
 
     log.info(f"Found {len(test_batches_paths)} batches to analyze")
 
