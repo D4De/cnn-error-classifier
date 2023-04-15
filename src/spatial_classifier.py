@@ -25,10 +25,12 @@ def to_classes_id(name) -> str:
         return "7"
     elif name == SpatialClass.SKIP_4.display_name():
         return "9"
-    elif name == SpatialClass.CHANNEL_ALIGNED_SAME_BLOCK.display_name():
+    elif name == SpatialClass.CHANNEL_ALIGNED_SAME_BLOCK.display_name() or SpatialClass.CHANNEL_ALIGNED_SINGLE_BLOCK.display_name():
         return "10"
     elif name == SpatialClass.MULTIPLE_MAP_RANDOM.display_name():
         return "8"
+    elif name == SpatialClass.TENSOR_ALIGNED_SINGLE_BLOCK.display_name():
+        return "11"
 
 
 class SpatialClass(Enum):
