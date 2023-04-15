@@ -3,6 +3,7 @@ import itertools
 import json
 from operator import itemgetter
 import os
+from typing import Callable, Union
 
 from coordinates import TensorLayout, map_to_coordinates
 from domain_classifier import DomainClass
@@ -10,6 +11,7 @@ from spatial_classifier import SpatialClass, accumulate_max, spatial_classificat
 from domain_classifier import domain_classification_vect
 import logging as log
 import numpy as np
+from utils import double_int_defaultdict, list_defaultdict
 
 from visualizer import visualize
 
@@ -98,9 +100,6 @@ def analyze_tensor(
     (faulty_channels,) = np.where(channel_sums != 0)
 
     if visualize_errors:
-        # Create error visualization
-        suptitle_id = metadata["test_campaign"] if "test_campaign" in metadata else metadata["test_id"] if "test_id" in metadata else '?'
-        filt_size = map_to_coordinates(metadata["filter_size"], layout)
         visualize(
             tensor_diff,
             faulty_channels.tolist(),
@@ -108,7 +107,7 @@ def analyze_tensor(
             spatial_class.output_path(output_dir, file_name),
             save=True,
             show=False,
-            suptitile=f'conv_{suptitle_id} {metadata["igid"]} {metadata["bfm"]} {golden_shape.C}x{golden_shape.H}x{golden_shape.W} filt: {filt_size.C}x{filt_size.H}x{filt_size.W}',
+            suptitile=f'{metadata["batch_name"]} {metadata["igid"]} {metadata["bfm"]} {golden_shape.C}x{golden_shape.H}x{golden_shape.W}',
             invalidate=True,
         )
 
@@ -147,7 +146,7 @@ def analyze_tensor_directory(
     visualize_errors: bool = False,
     save_report: bool = True,
     metadata: dict = {},
-    prog_bar=None,
+    on_tensor_completed : Union[Callable[[],None], None] = None,
 ):
     golden_shape = map_to_coordinates(golden.shape, layout)
 
@@ -161,13 +160,13 @@ def analyze_tensor_directory(
     log.info(f"Found {len(faulty_files_path)} faulty tensors to analize")
 
     # Initialize data structures for reports
-    sp_class_count = defaultdict(lambda: 0)
-    dom_class_count = defaultdict(lambda: 0)
+    sp_class_count = defaultdict(int)
+    dom_class_count = defaultdict(int)
     tensor_report = OrderedDict()
-    corrupt_cardinality = defaultdict(lambda: 0)
-    raveled_patterns = defaultdict(lambda: 0)
-    error_patterns = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))
-    class_params = defaultdict(lambda: defaultdict(list))
+    corrupt_cardinality = defaultdict(int)
+    raveled_patterns = defaultdict(int)
+    error_patterns = defaultdict(double_int_defaultdict)
+    class_params = defaultdict(list_defaultdict)
     corrupted_values = 0
 
     # Iterate over all tensor files
@@ -182,8 +181,8 @@ def analyze_tensor_directory(
             output_dir=image_output_dir,
             metadata=metadata,
         )
-        if prog_bar is not None:
-            prog_bar.update(1)
+        if on_tensor_completed is not None:
+            on_tensor_completed()
         sp_class_count[sp_class] += 1
 
         if sp_class != "masked" and sp_class != "skipped":
