@@ -1,8 +1,8 @@
 from itertools import groupby
 from operator import itemgetter
-from typing import Callable, Dict, Iterable, List, Literal, Tuple, Union
+from typing import Callable, Dict, Iterable, List, Literal, Set, Tuple, Union
 from collections import OrderedDict, defaultdict
-
+import logging as log
 import numpy as np
 from coordinates import Coordinates, TensorLayout, map_to_coordinates
 from enum import Enum
@@ -25,7 +25,7 @@ def to_classes_id(name) -> str:
         return "7"
     elif name == SpatialClass.SKIP_4.display_name():
         return "9"
-    elif name == SpatialClass.CHANNEL_ALIGNED_SAME_BLOCK.display_name() or SpatialClass.CHANNEL_ALIGNED_SINGLE_BLOCK.display_name():
+    elif name == SpatialClass.CHANNEL_ALIGNED_SAME_BLOCK.display_name() or name == SpatialClass.CHANNEL_ALIGNED_SINGLE_BLOCK.display_name():
         return "10"
     elif name == SpatialClass.MULTIPLE_MAP_RANDOM.display_name():
         return "8"
@@ -47,27 +47,6 @@ class SpatialClass(Enum):
     MULTIPLE_MAP_RANDOM = 10
     CHANNEL_ALIGNED_SINGLE_BLOCK = 11
     TENSOR_ALIGNED_SINGLE_BLOCK = 12
-
-    def to_classes_id(self) -> str:
-        if self == SpatialClass.SAME_ROW:
-            return "0"
-        elif self == SpatialClass.SINGLE_MAP_RANDOM:
-            return "3"
-        elif self == SpatialClass.BULLET_WAKE:
-            return "4"
-        elif self == SpatialClass.SHATTERED_GLASS:
-            return "6"
-        elif self == SpatialClass.SKIP_4:
-            return "9"
-        elif self == SpatialClass.CHANNEL_ALIGNED_SAME_BLOCK:
-            return "10"
-        elif self == SpatialClass.MULTIPLE_MAP_RANDOM:
-            return "8"
-        elif self == SpatialClass.CHANNEL_ALIGNED_SINGLE_BLOCK:
-            return "10"
-        elif self == SpatialClass.TENSOR_ALIGNED_SINGLE_BLOCK:
-            return "12"
-
 
     def display_name(self) -> str:
         return self.name.lower()
@@ -238,10 +217,10 @@ def quasi_shattered_glass_classifier(
     """
     # Common Row Index
     first_H = sparse_diff[0].H
-    cols_by_channels = defaultdict(lambda: set())
-    channels_by_cols = defaultdict(lambda: set())
+    cols_by_channels : Dict[int, Set[int]] = defaultdict(lambda: set())
+    channels_by_cols : Dict[int, Set[int]] = defaultdict(lambda: set())
     for coord in sparse_diff:
-        # To be Shattered Glass all corruption must stay on the same row of different feature map
+        # If the corruption expands to different rows, then it is not shattered glass
         if coord.H != first_H:
             return False, {}
         cols_by_channels[coord.C].add(coord.W)
@@ -250,7 +229,7 @@ def quasi_shattered_glass_classifier(
         return False, {}
     common_cols = {col : len(channel_set) for col, channel_set in channels_by_cols.items() if len(channel_set) >= 1}
     if len(common_cols) > 0:
-        common_element_col = max(common_cols.items(), key=itemgetter(1))
+        common_element_col, rows_in_common = max(common_cols.items(), key=itemgetter(1))
         smallest_chan = min(coord.C for coord in sparse_diff)
         max_c_offset = max(coord.C for coord in sparse_diff) - smallest_chan
         error_pattern = tuple(
@@ -344,7 +323,7 @@ def channel_aligned_same_block_pattern(
         # tolerance value
         if 10 <= corrupted_items <= 16:
             align = 16
-        if 17 <= corrupted_items <= 32:
+        elif 17 <= corrupted_items <= 32:
             align = 32
         elif 34 <= corrupted_items <= 64:
             align = 64
@@ -357,32 +336,72 @@ def channel_aligned_same_block_pattern(
         return False, {}
     coordinates = [raveled_channel_index(shape, coord) for coord in sparse_diff]
     # Use integer division to calculate the block of the coordinate
-    block_id = {coord // align for coord in coordinates}
+    block_id = defaultdict(int)
+    for coord in coordinates:
+        block_id[coord//align] += 1
     # There must not be errors outside of the block
+
     if len(block_id) == 1:
         the_block_id = next(iter(block_id))
-        indexes_by_channel = defaultdict(list)
-        min_c = min(coord.C for coord in sparse_diff)
-        # min_index is The starting position of the block
-        min_index = the_block_id * max_align
-        for coord in sparse_diff:
-            indexes_by_channel[coord.C - min_c].append(
-                raveled_channel_index(shape, coord) - min_index
-            )
-            error_pattern = (
-                align,
-                tuple(
-                    (chan, tuple(idx for idx in sorted(indexes)))
-                    for chan, indexes in sorted(
-                        indexes_by_channel.items(), key=itemgetter(0)
-                    )
-                ),
-            )
-        max_c_offset = max(coord.C for coord in sparse_diff) - min_c
+    elif len(block_id) == 2:
+        the_block_id, occourrences = max(block_id.items(), key=itemgetter(1))
+        dirty_block_id, dirty_occourrences = min(block_id.items(), key=itemgetter(1))
+        if dirty_occourrences > 1 or abs(dirty_block_id - the_block_id) > 1:
+            return False, {}
+    else:
+        return False, {}
+    
+    the_block_id = next(iter(block_id))
+    indexes_by_channel = defaultdict(list)
+    min_c = min(coord.C for coord in sparse_diff)
+    # min_index is The starting position of the block
+    min_index = the_block_id * max_align
+    for coord in sparse_diff:
+        indexes_by_channel[coord.C - min_c].append(
+            raveled_channel_index(shape, coord) - min_index
+        )
+        error_pattern = (
+            align,
+            tuple(
+                (chan, tuple(idx for idx in sorted(indexes)))
+                for chan, indexes in sorted(
+                    indexes_by_channel.items(), key=itemgetter(0)
+                )
+            ),
+        )
+    max_c_offset = max(coord.C for coord in sparse_diff) - min_c
+    return True, {
+        "error_pattern": error_pattern,
+        "align": max_align,
+        "MAX": [max_c_offset],
+    }
+
+
+def channel_aligned_multiple_blocks(
+    sparse_diff: Iterable[Coordinates],
+    shape: Coordinates,
+    corr_channels: Iterable[int],
+) -> Tuple[bool, Dict[str, any]]:
+    """
+    """
+    if len(corr_channels) != 1:
+        return False, {}
+    align = 32
+    raveled_fault_indexes = sorted(raveled_channel_index(shape, coord) for coord in sparse_diff)
+    faults_by_block = defaultdict(int)
+    n_blocks = (shape.H * shape.W + align - 1) // align
+    for index in raveled_fault_indexes:
+        faults_by_block[index // align] += 1
+    matches_pattern = all(corr_values >= align // 2 + 1 for block_id, corr_values in faults_by_block if block_id != n_blocks - 1)
+    if matches_pattern:
+        first_block = min(faults_by_block.keys())
+        last_block = max(faults_by_block.keys())
+        block_begin = first_block * align
+        error_pattern = (align,  tuple(idx - block_begin for idx in raveled_fault_indexes))
         return True, {
             "error_pattern": error_pattern,
-            "align": max_align,
-            "MAX": [max_c_offset],
+            "align": align,
+            "MAX": [last_block - first_block],
         }
     else:
         return False, {}
@@ -397,7 +416,7 @@ def tensor_aligned_single_block_pattern(
     Returns True if a Channel Aligned Same Block spatial distribution is recognized.
 
     """
-    raveled_fault_indexes = sorted([raveled_tensor_index(shape, coord) for coord in sparse_diff])
+    raveled_fault_indexes = sorted(raveled_tensor_index(shape, coord) for coord in sparse_diff)
     corrupted_items_count = len(sparse_diff)
     aligments = [16,32,64]
     if corrupted_items_count < min(aligments) // 2:
@@ -452,7 +471,7 @@ def multi_channel_skip_4_pattern(
     # all the other positions
     wrong_positions = coordinates - candidate_positions
 
-    if len(good_positions) >= 2 and len(wrong_positions) <= 3:
+    if len(good_positions) >= 2 and len(wrong_positions) <= 1:
         # Generate the error_pattern
         indexes_by_channel = defaultdict(list)
         min_c = min(coord.C for coord in sparse_diff)
@@ -553,6 +572,7 @@ MULTI_CHANNEL_CLASSIFIERS: Dict[
         (SpatialClass.CHANNEL_ALIGNED_SAME_BLOCK, channel_aligned_same_block_pattern),
         (SpatialClass.TENSOR_ALIGNED_SINGLE_BLOCK, tensor_aligned_single_block_pattern),
         (SpatialClass.SHATTERED_GLASS, shattered_glass_classifier),
+        (SpatialClass.QUASI_SHATTERED_GLASS, quasi_shattered_glass_classifier),
         (SpatialClass.MULTIPLE_MAP_RANDOM, random_classifier),
     ]
 )

@@ -166,7 +166,7 @@ def main():
             for cardinality, sp_classes in data.batch_class_params.items():
                 for sp_class, max_val in sp_classes.items():
                     global_class_params[cardinality][sp_class] = accumulate_max(global_class_params[cardinality][sp_class], max_val)
-            global_report[data.batch_name] = data.batch_report
+#            global_report[data.batch_name] = data.batch_report
         else:
             log.WARN(f"Batch {batch} returned None")
         
@@ -268,7 +268,7 @@ def main():
                         for pattern, freq in global_error_patterns_sorted[cardinality][
                             sp_class
                         ].items()
-                    }| {"MAX": global_class_params[cardinality][sp_class]}
+                    }| {"MAX": global_class_params[cardinality][sp_class] if len(global_class_params[cardinality][sp_class]) != 1 else global_class_params[cardinality][sp_class][0]}
                     for sp_class in sp_classes
                 },
             }
