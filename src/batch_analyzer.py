@@ -100,7 +100,7 @@ def analyze_batch(batch_path : str, args : Args, queue: Union[Queue, None]) -> U
 
     # If there is a queue specified prepare the lambda for signalling to the progress bar process that a tensor was processed
     if queue is not None:
-        on_tensor_completed = lambda: queue.put("processed", block=False)
+        on_tensor_completed = lambda: queue.put(("processed", 1), block=False)
     else:
         on_tensor_completed = None
 

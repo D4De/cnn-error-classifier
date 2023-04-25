@@ -31,8 +31,14 @@ def to_classes_id(name) -> str:
         return "8"
     elif name == SpatialClass.TENSOR_ALIGNED_SINGLE_BLOCK.display_name():
         return "11"
-
-
+    elif name == SpatialClass.SINGLE_BLOCK.display_name():
+        return "13"
+    elif name == SpatialClass.MULTI_CHANNEL_BLOCK.display_name():
+        return "14"
+    elif name == SpatialClass.SHATTERED_CHANNEL.display_name():
+        return "15"
+    elif name == SpatialClass.QUASI_SHATTERED_CHANNEL.display_name():
+        return "16"
 class SpatialClass(Enum):
     SAME = 0
     SINGLE = 1
@@ -47,6 +53,10 @@ class SpatialClass(Enum):
     MULTIPLE_MAP_RANDOM = 10
     CHANNEL_ALIGNED_SINGLE_BLOCK = 11
     TENSOR_ALIGNED_SINGLE_BLOCK = 12
+    SINGLE_BLOCK = 13
+    MULTI_CHANNEL_BLOCK = 14
+    SHATTERED_CHANNEL = 15
+    QUASI_SHATTERED_CHANNEL = 16
 
     def display_name(self) -> str:
         return self.name.lower()
@@ -124,6 +134,8 @@ def same_column_classifier(
         "max_h_offset": max_h_offset,
         "MAX": [max_h_offset],
     }
+
+
 
 
 def bullet_wake_classifier(
@@ -497,6 +509,195 @@ def multi_channel_skip_4_pattern(
     else:
         return False, {}
 
+def identify_block_length(
+    indexes: Iterable[int],
+) -> Union[Tuple[int, int, int], None]:
+    cardinality = len(indexes)
+    if cardinality <= 10:
+        return None
+    # span is the distance between the error with the lowest index and the error with the highest index
+    block_begin = indexes[0]
+    block_end = indexes[-1]
+    span = block_end - block_begin
+
+    # check that errors have the right cardinality for a block length of 16,32,64 and that they are all within the block
+    if 10 < cardinality <= 16 and span <= 16:
+        return 16, block_begin % 16, block_begin // 16
+    elif 16 < cardinality <= 32 and span <= 32:
+        return 32, block_begin % 32, block_begin // 32
+    elif 32 < cardinality <= 64 and span <= 64:
+        return 64, block_begin % 64, block_begin // 64
+    else:
+        return None
+
+def single_block(
+    sparse_diff: Iterable[Coordinates],
+    shape: Coordinates,
+    corr_channels: Iterable[int],
+) -> Tuple[bool, Dict[str, any]]:
+    indexes = sorted(raveled_tensor_index(shape, coord) for coord in sparse_diff)
+    block_begin = indexes[0]
+    result = identify_block_length(indexes)
+    if result is None:
+        return False, {}
+    block_length, aligment_offset, block_id = result
+    error_pattern = (block_length,  tuple(idx - block_begin for idx in indexes))
+    return True, {
+        "error_pattern": error_pattern,
+        "block_length": block_length,
+        "MAX": [],
+    }
+
+
+def multi_channel_same_block(
+    sparse_diff: Iterable[Coordinates],
+    shape: Coordinates,
+    corr_channels: Iterable[int],
+) -> Tuple[bool, Dict[str, any]]:
+    if len(corr_channels) < 2:
+        return False, {}
+    block_start = shape.H * shape.W
+    max_block_length = -1
+    leader_chan = None
+    indexes_by_channel = {}
+    for chan in corr_channels:
+        this_chan_indexes = sorted(raveled_channel_index(shape, coord) for coord in sparse_diff if coord.C == chan)
+        first_chan_error = this_chan_indexes[0]
+        indexes_by_channel[chan] = this_chan_indexes
+        result = identify_block_length(this_chan_indexes)
+        if result is None:
+            continue
+        block_length, aligment_offset, block_id = result
+        if block_length > max_block_length:
+            max_block_length = block_length
+            block_start = first_chan_error
+            leader_chan = chan
+        elif block_length == max_block_length and first_chan_error < block_start:
+            block_start = first_chan_error
+            leader_chan = chan
+    if leader_chan is None:
+        return False, {}
+    found_mismatch = False
+    for chan in corr_channels:
+        if chan == leader_chan:
+            continue
+        if not all(block_start <= error_idx <= block_start + max_block_length for error_idx in indexes_by_channel[chan]):
+            result = identify_block_length(indexes_by_channel[chan])
+            if result is None:
+                found_mismatch = True
+    
+    if found_mismatch:
+        return False, {}
+    min_c = min(corr_channels)
+    max_c = max(corr_channels)
+    error_pattern = (max_block_length, tuple((chan - min_c, tuple(error_idx - block_start for error_idx in indexes_by_channel[chan])) for chan in corr_channels) )
+    return True, {
+        "error_pattern": error_pattern,
+        "align": block_length,
+        "MAX": [max_c - min_c],
+    }
+
+def shattered_channel(
+    sparse_diff: Iterable[Coordinates],
+    shape: Coordinates,
+    corr_channels: Iterable[int],
+) -> Tuple[bool, Dict[str, any]]:
+    if len(corr_channels) < 2:
+        return False, {}
+    indexes_by_chan = {}
+    for chan in corr_channels:
+        indexes_by_chan[chan] = set(raveled_channel_index(shape, coord) for coord in sparse_diff if coord.C == chan)
+    min_c = min(corr_channels)
+    common_indexes = indexes_by_chan[min_c]
+    all_indexes = set()
+    for chan in corr_channels:
+        common_indexes &= indexes_by_chan[chan]
+        all_indexes |= indexes_by_chan[chan]
+    if len(common_indexes) == 0:
+        return False, {}
+    zero_index = next(iter(common_indexes))
+    min_w_offset = min(idx - zero_index for idx in all_indexes)
+    max_w_offset = max(idx - zero_index for idx in all_indexes)
+    max_c_offset = max(corr_channels) - min_c
+    feature_maps_count = len(corr_channels)
+    error_pattern = tuple((chan - min_c, tuple(error_idx - zero_index for error_idx in indexes_by_chan[chan])) for chan in corr_channels)    
+
+    return True, {
+        "error_pattern": error_pattern,
+        "min_w_offset": min_w_offset,
+        "max_w_offset": max_w_offset,
+        "max_c_offset": max_c_offset,
+        "feature_maps_count": feature_maps_count,
+        "MAX": [feature_maps_count, max_c_offset, min_w_offset, max_w_offset],
+    }    
+
+
+def shattered_channel(
+    sparse_diff: Iterable[Coordinates],
+    shape: Coordinates,
+    corr_channels: Iterable[int],
+) -> Tuple[bool, Dict[str, any]]:
+    if len(corr_channels) < 2:
+        return False, {}
+    indexes_by_chan = {}
+    for chan in corr_channels:
+        indexes_by_chan[chan] = set(raveled_channel_index(shape, coord) for coord in sparse_diff if coord.C == chan)
+    min_c = min(corr_channels)
+    common_indexes = indexes_by_chan[min_c]
+    all_indexes = set()
+    for chan in corr_channels:
+        common_indexes &= indexes_by_chan[chan]
+        all_indexes |= indexes_by_chan[chan]
+    if len(common_indexes) == 0:
+        return False, {}
+    zero_index = next(iter(common_indexes))
+    min_w_offset = min(idx - zero_index for idx in all_indexes)
+    max_w_offset = max(idx - zero_index for idx in all_indexes)
+    max_c_offset = max(corr_channels) - min_c
+    feature_maps_count = len(corr_channels)
+    error_pattern = tuple((chan - min_c, tuple(error_idx - zero_index for error_idx in indexes_by_chan[chan])) for chan in corr_channels)    
+
+    return True, {
+        "error_pattern": error_pattern,
+        "min_w_offset": min_w_offset,
+        "max_w_offset": max_w_offset,
+        "max_c_offset": max_c_offset,
+        "feature_maps_count": feature_maps_count,
+        "MAX": [feature_maps_count, max_c_offset, min_w_offset, max_w_offset],
+    }  
+
+def quasi_shattered_channel(
+    sparse_diff: Iterable[Coordinates],
+    shape: Coordinates,
+    corr_channels: Iterable[int],
+) -> Tuple[bool, Dict[str, any]]:
+    if len(corr_channels) < 2:
+        return False, {}
+    indexes_by_chan = {}
+    chan_by_indexes = defaultdict(set)
+    for chan in corr_channels:
+        indexes_by_chan[chan] = set(raveled_channel_index(shape, coord) for coord in sparse_diff if coord.C == chan)
+    for chan in indexes_by_chan:
+        for idx in indexes_by_chan[chan]:
+            chan_by_indexes[idx].add(chan)
+    zero_index, common_channels = max(chan_by_indexes.items(), key=lambda s: len(s[1]))
+    if len(common_channels) < 2:
+        return False, {}
+    min_c = min(corr_channels)
+    min_w_offset = min(idx - zero_index for idx in chan_by_indexes.keys())
+    max_w_offset = max(idx - zero_index for idx in chan_by_indexes.keys())
+    max_c_offset = max(corr_channels) - min_c
+    feature_maps_count = len(corr_channels)
+    error_pattern = tuple((chan - min_c, tuple(error_idx - zero_index for error_idx in indexes_by_chan[chan])) for chan in corr_channels)    
+
+    return True, {
+        "error_pattern": error_pattern,
+        "min_w_offset": min_w_offset,
+        "max_w_offset": max_w_offset,
+        "max_c_offset": max_c_offset,
+        "feature_maps_count": feature_maps_count,
+        "MAX": [feature_maps_count, max_c_offset, min_w_offset, max_w_offset],
+    }  
 
 def random_classifier(
     sparse_diff: Iterable[Coordinates],
@@ -515,6 +716,29 @@ def random_classifier(
             for chan, indexes in sorted(indexes_by_channel.items(), key=itemgetter(0))
         )
     return True, {"error_pattern": error_pattern}
+
+SINGLE_CHANNEL_CLASSIFIERS_NEW = OrderedDict(
+    [
+        (SpatialClass.SINGLE, single_classifier),
+        (SpatialClass.SKIP_4, multi_channel_skip_4_pattern),
+        (SpatialClass.SINGLE_BLOCK, single_block),
+        (SpatialClass.SAME_ROW, same_row_classifier),
+        (SpatialClass.SINGLE_MAP_RANDOM, random_classifier),
+    ]
+)
+
+
+MULTI_CHANNEL_CLASSIFIERS_NEW = OrderedDict(
+    [
+        (SpatialClass.SKIP_4, multi_channel_skip_4_pattern),
+        (SpatialClass.SINGLE_BLOCK, single_block),
+        (SpatialClass.MULTI_CHANNEL_BLOCK, multi_channel_same_block),
+        (SpatialClass.BULLET_WAKE, bullet_wake_classifier),
+        (SpatialClass.SHATTERED_CHANNEL, shattered_channel),
+        (SpatialClass.QUASI_SHATTERED_CHANNEL, quasi_shattered_channel),
+        (SpatialClass.MULTIPLE_MAP_RANDOM, random_classifier)
+    ]
+)
 
 SINGLE_CHANNEL_CLASSIFIERS: Dict[SpatialClass,     Callable[
         [Iterable[Coordinates], Coordinates, Iterable[int]],
@@ -587,12 +811,12 @@ def spatial_classification(
     corrupted_channels = list({x.C for x in sparse_diff})
 
     if len(corrupted_channels) == 1:
-        for sp_class, classifier in SINGLE_CHANNEL_CLASSIFIERS.items():
+        for sp_class, classifier in SINGLE_CHANNEL_CLASSIFIERS_NEW.items():
             is_class, pattern_data = classifier(sparse_diff, shape, corrupted_channels)
             if is_class:
                 return sp_class, pattern_data
     else:
-        for sp_class, classifier in MULTI_CHANNEL_CLASSIFIERS.items():
+        for sp_class, classifier in MULTI_CHANNEL_CLASSIFIERS_NEW.items():
             is_class, pattern_data = classifier(sparse_diff, shape, corrupted_channels)
             if is_class:
                 return sp_class, pattern_data

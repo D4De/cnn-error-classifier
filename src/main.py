@@ -3,7 +3,7 @@ from functools import partial
 from multiprocessing import Manager, Pool, Process, Queue
 from operator import itemgetter
 from queue import Empty
-from typing import List
+from typing import Dict, List, Tuple
 import logging as log
 from collections import OrderedDict, defaultdict
 import os
@@ -12,6 +12,7 @@ import json
 import sys
 from args import Args, create_parser
 from batch_analyzer import analyze_batch
+import numpy as np
 from domain_classifier import DomainClass
 
 REPORT_FILE = "report.json"
@@ -36,9 +37,15 @@ def setup_logging():
     root.addHandler(handler)
 
 
-def precalculate_workload(batch_paths: List[str], faulty_path: str):
+def precalculate_workload(batch_paths: List[str], faulty_path: str, golden_path: str) -> Tuple[int, int, Dict[str, int]]:
     tensors = 0
+    values = 0
+    batch_sizes = {}
     for batch_path in batch_paths:
+        batch_size_values = 0
+        path_to_golden = os.path.join(batch_path, golden_path)
+        golden_size = np.load(path_to_golden).size
+
         faulty_dir_path = os.path.join(batch_path, faulty_path)
         sub_batch_dirs = [
             os.path.join(faulty_dir_path, dir)
@@ -46,30 +53,36 @@ def precalculate_workload(batch_paths: List[str], faulty_path: str):
             if os.path.isdir(os.path.join(faulty_dir_path, dir))
         ]
         for sub_batch_path in sub_batch_dirs:
-            tensors += len(
+            tensors_sub_batch = len(
                 [
                     os.path.join(sub_batch_path, entry)
                     for entry in os.listdir(sub_batch_path)
                     if entry.split(".")[1] == "npy"
                 ]
             )
-    return tensors
+            sub_batch_weight = tensors_sub_batch * golden_size
+            tensors += tensors_sub_batch
+            values += sub_batch_weight
+            batch_size_values += sub_batch_weight
+        
+        batch_sizes[batch_path] = sub_batch_weight
+    return tensors, values, batch_sizes
 
 def progress_handler(queue: Queue, work: int):
     with tqdm(total=work) as pbar:
         work_count = 0
         while True:
             try:
-                message = queue.get(True, 10)
-                if message == "processed":
-                    work_count += 1
-                    pbar.update(1)
+                message, args = queue.get(True, 10)
+                if message == "exit":
+                    break
+                elif message == "processed":
+                    work_count += args
+                    pbar.update(args)
                     sys.stdout.flush()
                     if work_count >= work:
                         print("Work complete!")
                         break
-                elif message == "exit":
-                    break
             except Empty:
                 print("No updates received. Quitting")
                 break 
@@ -111,9 +124,9 @@ def main():
         # Create output folder structure (if not exists already)
         create_visual_spatial_classification_folders(args.visualize_path)
     # workload == number of tensors to analyze in all batches (for progress bar)
-    workload = precalculate_workload(test_batches_paths, args.faulty_path)
-
-    log.info(f"Found {workload} tensors to analyze")
+    n_tensors, n_values, batch_sizes = precalculate_workload(test_batches_paths, args.faulty_path, args.golden_path)
+    test_batches_paths = sorted(test_batches_paths, key=lambda x: batch_sizes[x], reverse=True)
+    log.info(f"Found {n_tensors} tensors to analyze")
     # Mute logger to avoid interferences with tqdm
     log.getLogger().setLevel(log.WARN)
 
@@ -138,7 +151,7 @@ def main():
     progress_queue = manager.Queue()
     batch_partial = partial(analyze_batch, args=args, queue=progress_queue)
     
-    progress_process = Process(target=progress_handler, args=(progress_queue, workload))
+    progress_process = Process(target=progress_handler, args=(progress_queue, n_tensors))
     progress_process.start()
     with Pool(args.parallel) as pool:
         result = pool.map_async(batch_partial, test_batches_paths, chunksize=1)
@@ -230,6 +243,9 @@ def main():
 
     # Generate the json files of errors models needed in the CLASSES framework (if option --classes is specified in arguments)
     if args.classes is not None:
+        classes_output_dir = os.path.join(args.output_dir, "classes")
+        if not os.path.exists(classes_output_dir):
+            os.mkdir(classes_output_dir)
         # Cardinality file
         # Keys: All the cardinalities (number of errors in each tensors)
         # Values: Relative frequency of the cardinality [0,1]
@@ -301,11 +317,11 @@ def main():
         """.format(
             **dom_class
         )
-        with open(os.path.join(args.output_dir, "value_analysis.txt"), "w") as f:
+        with open(os.path.join(classes_output_dir, "value_analysis.txt"), "w") as f:
             f.write(classes_domain_models)
         with open(
             os.path.join(
-                args.output_dir,
+                classes_output_dir,
                 f"{args.classes[0]}_{args.classes[1]}_spatial_model.json",
             ),
             "w",
@@ -313,7 +329,7 @@ def main():
             f.write(json.dumps(classes_spatial_models, indent=2))
         with open(
             os.path.join(
-                args.output_dir,
+                classes_output_dir,
                 f"{args.classes[1]}_{args.classes[0]}_anomalies_count.json",
             ),
             "w",
