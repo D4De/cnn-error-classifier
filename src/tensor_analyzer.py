@@ -206,7 +206,7 @@ def analyze_tensor_directory(
     )
 
     if classified_tensors == 0:
-        log.warn("No tensors were classified")
+        log.warn(f"No tensors were classified in {faulty_path}")
         return {}
     # Main Report Generation
     main_report = OrderedDict()

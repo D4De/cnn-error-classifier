@@ -3,7 +3,7 @@ from typing import Dict, Iterable, Tuple
 from coordinates import Coordinates
 
 
-def single_classifier(
+def single_pattern(
     sparse_diff: Iterable[Coordinates],
     shape: Coordinates,
     corr_channels: Iterable[int],

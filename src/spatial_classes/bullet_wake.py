@@ -2,7 +2,7 @@ from typing import Dict, Iterable, Tuple
 
 from coordinates import Coordinates
 
-def bullet_wake_classifier(
+def bullet_wake_pattern(
     sparse_diff: Iterable[Coordinates],
     shape: Coordinates,
     corr_channels: Iterable[int],

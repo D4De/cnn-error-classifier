@@ -2,7 +2,7 @@ from typing import Dict, Iterable, Tuple
 
 from coordinates import Coordinates
 
-def same_column_classifier(
+def same_column_pattern(
     sparse_diff: Iterable[Coordinates],
     shape: Coordinates,
     corr_channels: Iterable[int],
