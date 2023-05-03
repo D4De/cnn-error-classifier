@@ -2,22 +2,34 @@ from collections import OrderedDict, defaultdict, namedtuple
 import json
 from multiprocessing import Queue
 import os
-from typing import Any, Union
+from typing import Union
 
-import tqdm
 from args import Args
 import logging as log
 import numpy as np
 from coordinates import map_to_coordinates
 from spatial_classifier import accumulate_max
 
-from tensor_analyzer import analyze_tensor_directory
+from sub_batch_analyzer import analyze_tensor_directory
 from utils import double_int_defaultdict, int_defaultdict, list_defaultdict
 
-BatchAnalyzeReturnType = namedtuple('BatchAnalyzeReturnType', ['batch_name', 'batch_report', 'batch_dom_classes', 'batch_sp_classes', 'batch_error_patterns', 'batch_cardinalities', 'batch_class_params'])
+BatchAnalyzeReturnType = namedtuple(
+    "BatchAnalyzeReturnType",
+    [
+        "batch_name",
+        "batch_report",
+        "batch_dom_classes",
+        "batch_sp_classes",
+        "batch_error_patterns",
+        "batch_cardinalities",
+        "batch_class_params",
+    ],
+)
 
 
-def analyze_batch(batch_path : str, args : Args, queue: Union[Queue, None]) -> Union[BatchAnalyzeReturnType, None]:
+def analyze_batch(
+    batch_path: str, args: Args, queue: Union[Queue, None]
+) -> Union[BatchAnalyzeReturnType, None]:
     """
     Analyze a single batch of tensors
 
@@ -27,14 +39,14 @@ def analyze_batch(batch_path : str, args : Args, queue: Union[Queue, None]) -> U
 
     batch_path: The absolute path of the batch path
     args: The args passed from the command line
-    queue: Optional, if a "processed" message is put into that queue at every completed tensor analyis 
+    queue: Optional, if a "processed" message is put into that queue at every completed tensor analyis
     """
     golden_path = os.path.join(batch_path, args.golden_path)
     batch_name = os.path.basename(batch_path)
 
     # No gold found
     if not os.path.exists(golden_path):
-        print(
+        log.error(
             f"Skipping {batch_name} batch since it does not contain golden tensor"
         )
         return None
@@ -60,14 +72,11 @@ def analyze_batch(batch_path : str, args : Args, queue: Union[Queue, None]) -> U
     faulty_path = os.path.join(batch_path, args.faulty_path)
 
     if not os.path.exists(faulty_path):
-        log.warning(
-            f"Skipping {batch_name} batch. Could not open path to faulty path"
-        )
+        log.warning(f"Skipping {batch_name} batch. Could not open path to faulty path")
         return None
-    
+
     # Retrieve metadata from info.json file (if they exist)
     metadata_path = os.path.join(faulty_path, "info.json")
-
 
     if os.path.exists(metadata_path):
         with open(metadata_path, "r") as f:
@@ -80,7 +89,7 @@ def analyze_batch(batch_path : str, args : Args, queue: Union[Queue, None]) -> U
         for dir in os.listdir(faulty_path)
         if os.path.isdir(os.path.join(faulty_path, dir))
     ]
-    
+
     batch_report = OrderedDict()
     # Stores the absolute frequency of the domain patterns for this batch
     batch_dom_classes = defaultdict(int)
@@ -88,19 +97,15 @@ def analyze_batch(batch_path : str, args : Args, queue: Union[Queue, None]) -> U
     batch_sp_classes = defaultdict(int)
     # Stores the absolute frequencies of the different spatial configuration of each pattern, grouped by error cardinalities
     # global_error_patterns[cardinality][spatial class name][pattern (stringfied tuple)] -> frequency of the pattern
-    batch_error_patterns = defaultdict(
-        double_int_defaultdict
-    )
+    batch_error_patterns = defaultdict(double_int_defaultdict)
     # Store additional parameters for the spatial classes, grouped by cardinality
-    batch_class_params = defaultdict(
-        list_defaultdict
-    )
+    batch_class_params = defaultdict(list_defaultdict)
     # global_error_patterns[cardinality][spatial class name] -> frequency of the spatial class with that cardinailty
     batch_cardinalities = defaultdict(int_defaultdict)
 
     # If there is a queue specified prepare the lambda for signalling to the progress bar process that a tensor was processed
     if queue is not None:
-        on_tensor_completed = lambda: queue.put("processed", block=False)
+        on_tensor_completed = lambda: queue.put(("processed", 1), block=False)
     else:
         on_tensor_completed = None
 
@@ -108,10 +113,17 @@ def analyze_batch(batch_path : str, args : Args, queue: Union[Queue, None]) -> U
     for faulty_path in sorted(sub_batch_dir):
         sub_batch_name = os.path.basename(faulty_path)
         # (I)struction (G)roup (ID) and (B)it (F)lip (M)odel are inferend from the folder name (separated by _)
-        igid = sub_batch_name.split("_")[0]
-        bfm = sub_batch_name.split("_")[1]
+        sub_batch_tokens = sub_batch_name.split("_")
+        if len(sub_batch_tokens) == 2:
+            igid, bfm = sub_batch_tokens
+        else:
+            igid, bfm = None, None
         # Append sub batch metadata to the batch metadata
-        sub_batch_metadata = metadata | {"igid": igid, "bfm": bfm, "batch_name": batch_name}
+        sub_batch_metadata = metadata | {
+            "igid": igid,
+            "bfm": bfm,
+            "batch_name": batch_name,
+        }
         # Run analysis of a sub batch (i.e. fp32_wzv, ld_wrv, ... subdirectories)
         report = analyze_tensor_directory(
             faulty_path=faulty_path,
@@ -130,7 +142,7 @@ def analyze_batch(batch_path : str, args : Args, queue: Union[Queue, None]) -> U
         )
 
         if len(report) == 0:
-        # Empty report = Tensor not processed
+            # Empty report = Tensor not processed
             continue
         # accumulate values to add in batch global dictionaries
         # Accumulate domain classes absolute frequencies
@@ -140,29 +152,32 @@ def analyze_batch(batch_path : str, args : Args, queue: Union[Queue, None]) -> U
         for sp_class, count in report["global_data"]["spatial_classes"].items():
             batch_sp_classes[sp_class] += count
 
-        for cardinality, sp_classes in report["global_data"][
-            "error_patterns"
-        ].items():
+        for cardinality, sp_classes in report["global_data"]["error_patterns"].items():
             total = 0
             for sp_class, patterns in sp_classes.items():
                 # Sum total cardinalities frequencies
                 total += len(patterns)
                 batch_cardinalities[cardinality][sp_class] += len(patterns)
                 for pattern, freq in patterns.items():
-                    # Accumulate frequencies of the single spatial configurations of each spatial pattern 
-                    batch_error_patterns[cardinality][sp_class][
-                        pattern
-                    ] += freq
+                    # Accumulate frequencies of the single spatial configurations of each spatial pattern
+                    batch_error_patterns[cardinality][sp_class][pattern] += freq
             batch_cardinalities[cardinality]["sum"] = total
         for cardinality, sp_classes in report["global_data"]["class_params"].items():
             for sp_class, max_val in sp_classes.items():
-                batch_class_params[cardinality][sp_class] = accumulate_max(batch_class_params[cardinality][sp_class], max_val)
+                batch_class_params[cardinality][sp_class] = accumulate_max(
+                    batch_class_params[cardinality][sp_class], max_val
+                )
         batch_report[sub_batch_name] = report["global_data"]
         # remove  tooverbose data from global report
         del batch_report[sub_batch_name]["raveled_patterns"]
         del batch_report[sub_batch_name]["error_patterns"]
 
-
-
-    return BatchAnalyzeReturnType(batch_name, batch_report, batch_dom_classes, batch_sp_classes, batch_error_patterns, batch_cardinalities, batch_class_params)
-
+    return BatchAnalyzeReturnType(
+        batch_name,
+        batch_report,
+        batch_dom_classes,
+        batch_sp_classes,
+        batch_error_patterns,
+        batch_cardinalities,
+        batch_class_params,
+    )

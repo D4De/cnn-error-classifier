@@ -6,12 +6,12 @@ from typing import Tuple, Union
 from coordinates import TensorLayout
 
 
-
 @dataclass
 class Args:
     """
     Typed holder of arguments received from command line and parsed using argparse
     """
+
     layout: TensorLayout
     """
     Holds how the tensor is structured
@@ -87,33 +87,33 @@ class Args:
     parallel: int
     """
     The number of parallel processes
-    """   
+    """
 
     @classmethod
-    def from_argparse(cls, args : Namespace) -> Args:
+    def from_argparse(cls, args: Namespace) -> Args:
         """
         Generate an instance of Args from the argument parsed by argparse
         """
         if args.nhwc:
-            tensor_layout = TensorLayout.NHWC 
+            tensor_layout = TensorLayout.NHWC
         else:
             tensor_layout = TensorLayout.NCHW
         return Args(
-                tensor_layout, 
-                epsilon=args.epsilon, 
-                root_path=args.root_path, 
-                golden_path=args.golden_path, 
-                faulty_path=args.faulty_path,
-                output_dir=args.output_dir,
-                limit=args.limit,
-                visualize=args.visualize,
-                almost_same=args.almost_same,
-                partial_reports=args.partial_reports,
-                classes=args.classes,
-                visualize_path=os.path.join(args.output_dir, "visualize"),
-                reports_path = os.path.join(args.output_dir, "reports"),
-                parallel=args.parallel
-            )
+            tensor_layout,
+            epsilon=args.epsilon,
+            root_path=args.root_path,
+            golden_path=args.golden_path,
+            faulty_path=args.faulty_path,
+            output_dir=args.output_dir,
+            limit=args.limit,
+            visualize=args.visualize,
+            almost_same=args.almost_same,
+            partial_reports=args.partial_reports,
+            classes=args.classes,
+            visualize_path=os.path.join(args.output_dir, "visualize"),
+            reports_path=os.path.join(args.output_dir, "reports"),
+            parallel=args.parallel,
+        )
 
 
 def create_parser() -> ArgumentParser:
@@ -151,7 +151,7 @@ def create_parser() -> ArgumentParser:
         type=int,
         help="Use N parallel processes",
         metavar="N",
-        default=1
+        default=1,
     )
     parser.add_argument(
         "-v",
@@ -183,7 +183,7 @@ def create_parser() -> ArgumentParser:
         "--classes",
         nargs=2,
         metavar=("Sx", "OPERATION"),
-        help="Generate files for running classes",
+        help="Generate models for classes",
     )
 
     tensor_format_group = parser.add_mutually_exclusive_group()

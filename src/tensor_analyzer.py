@@ -1,31 +1,14 @@
-from collections import OrderedDict, defaultdict
-import itertools
-import json
-from operator import itemgetter
 import os
-from typing import Callable, Union
+from typing import Any, Dict, Tuple
 
-from coordinates import TensorLayout, map_to_coordinates
+from coordinates import TensorLayout, map_to_coordinates, numpy_coords_to_python_coord
 from domain_classifier import DomainClass
 from spatial_classifier import SpatialClass, accumulate_max, spatial_classification
 from domain_classifier import domain_classification_vect
 import logging as log
 import numpy as np
-from utils import double_int_defaultdict, list_defaultdict
 
 from visualizer import visualize
-
-
-def sort_dict(data: dict, sort_key=lambda x: x[1], reverse=True):
-    return OrderedDict(
-        sorted(
-            [(key, value) for key, value in data.items()], key=sort_key, reverse=reverse
-        )
-    )
-
-
-def numpy_coords_to_python_coord(coords: tuple):
-    return tuple(coord.item() for coord in coords)
 
 
 def analyze_tensor(
@@ -37,11 +20,55 @@ def analyze_tensor(
     visualize_errors: bool,
     output_dir: str,
     metadata: dict = {},
-):
+) -> Tuple[str, Dict[str, Any]]:
+    """
+    Analyzes a single tensor, in a directory of faulty tensors
+    Returns a tuple of two items.
+    The first contains the spatial class of the tensor, the second dictionary with various data about the analysis
+
+    file_path: str
+    ---
+    Path to the faulty tensor
+
+    golden: np.ndarray
+    ---
+    The golden tensor, that will be compared with the faulty
+
+    layout : TensorLayout
+    ---
+    The layout in which both the golden and the faulty tensors are stored
+
+    epsilon : float
+    ---
+    The minimum (absolute value) difference between two values needed to consider
+    them different.
+
+    almost_same : bool
+    ---
+    If true, two different values that have an absolute value difference less than epsilon,
+    will be classified as "almost_same". If false, the two values are considered equal. See Args documentation
+
+    visualize_errors : bool
+    ---
+    If true a visualization of the error locations will be generated and saved as png
+
+    output_dir : str
+    ---
+    A path to the root of the directory where all outputs will be saved
+
+    metadata : dict
+    ---
+    A dictionary that contains metadata about the text. The mandatory metadata, needed for processing and classifying the tensor are:
+    - bfm: Fault Model
+    - igid: Instruction Group Id
+    - batch_name: str that indicates the batch name -> contained in info.json
+
+    bfm and igid are derived from the name of the folders that contains faulty tensors. All these folders' names must have the following structure <bfm>_<igid>
+    """
     # Initialization
     temp_dom_class_count = np.int64(np.zeros(len(DomainClass)))
 
-    # Opening file
+    # Opening faulty tensor
     file_name = os.path.basename(file_path).split(".")[0]
 
     log.debug(f"Opening {file_path}")
@@ -104,10 +131,12 @@ def analyze_tensor(
             tensor_diff,
             faulty_channels.tolist(),
             layout,
-            spatial_class.output_path(output_dir, file_name),
+            spatial_class.output_path(
+                output_dir, f'{metadata["batch_name"]}_{file_name}'
+            ),
             save=True,
             show=False,
-            suptitile=f'{metadata["batch_name"]} {metadata["igid"]} {metadata["bfm"]} {golden_shape.C}x{golden_shape.H}x{golden_shape.W}',
+            suptitile=f'{metadata.get("batch_name") or ""} {metadata.get("igid") or ""} {metadata.get("bfm") or ""} {golden_shape.C}x{golden_shape.H}x{golden_shape.W}',
             invalidate=True,
         )
 
@@ -133,144 +162,3 @@ def analyze_tensor(
         if spatial_class == SpatialClass.CHANNEL_ALIGNED_SAME_BLOCK
         else None,
     }
-
-
-def analyze_tensor_directory(
-    faulty_path: str,
-    golden: np.ndarray,
-    report_output_path: str,
-    layout: TensorLayout,
-    epsilon: int,
-    almost_same: bool,
-    image_output_dir: str = "",
-    visualize_errors: bool = False,
-    save_report: bool = True,
-    metadata: dict = {},
-    on_tensor_completed : Union[Callable[[],None], None] = None,
-):
-    golden_shape = map_to_coordinates(golden.shape, layout)
-
-    # Get list of all file ending in .npy
-    faulty_files_path = [
-        os.path.join(faulty_path, entry)
-        for entry in os.listdir(faulty_path)
-        if entry.split(".")[1] == "npy"
-    ]
-
-    log.info(f"Found {len(faulty_files_path)} faulty tensors to analize")
-
-    # Initialize data structures for reports
-    sp_class_count = defaultdict(int)
-    dom_class_count = defaultdict(int)
-    tensor_report = OrderedDict()
-    corrupt_cardinality = defaultdict(int)
-    raveled_patterns = defaultdict(int)
-    error_patterns = defaultdict(double_int_defaultdict)
-    class_params = defaultdict(list_defaultdict)
-    corrupted_values = 0
-
-    # Iterate over all tensor files
-    for file_path in sorted(faulty_files_path):
-        sp_class, tensor_dict = analyze_tensor(
-            file_path=file_path,
-            golden=golden,
-            layout=layout,
-            epsilon=epsilon,
-            almost_same=almost_same,
-            visualize_errors=visualize_errors,
-            output_dir=image_output_dir,
-            metadata=metadata,
-        )
-        if on_tensor_completed is not None:
-            on_tensor_completed()
-        sp_class_count[sp_class] += 1
-
-        if sp_class != "masked" and sp_class != "skipped":
-            error_pattern = str(tensor_dict["error_pattern"])
-            corr_val_count = tensor_dict["corrupted_values"]
-
-            tensor_report[os.path.basename(file_path)] = tensor_dict
-            raveled_patterns[str(tensor_dict["raveled_offsets"])] += 1
-            corrupt_cardinality[tensor_dict["corrupted_values"]] += 1
-            corrupted_values += tensor_dict["corrupted_values"]
-            error_patterns[corr_val_count][sp_class][error_pattern] += 1
-            class_params[corr_val_count][sp_class] = accumulate_max(
-                class_params[corr_val_count][sp_class],
-                tensor_dict["class_params"]["MAX"] if "MAX" in tensor_dict["class_params"] else [],
-            )
-            for dom_class, freq in tensor_dict["domain_classes"].items():
-                dom_class_count[dom_class] += freq
-
-    classified_tensors = (
-        len(faulty_files_path) - sp_class_count["masked"] - sp_class_count["skipped"]
-    )
-
-    if classified_tensors == 0:
-        log.warn("No tensors were classified")
-        return {}
-    # Main Report Generation
-    main_report = OrderedDict()
-    global_data = OrderedDict()
-
-    global_data["tensor_shape"] = golden_shape._asdict()
-    global_data["tensor_size"] = golden.size
-    global_data["tensors"] = len(faulty_files_path)
-    global_data["masked"] = sp_class_count["masked"]
-    global_data["skipped"] = sp_class_count["skipped"]
-    global_data["classified_tensors"] = classified_tensors
-    global_data["corrupted_values"] = corrupted_values
-    global_data["error_patterns"] = error_patterns
-    global_data["class_params"] = class_params
-    global_data["average_corrupted_values_pct"] = (
-        float(corrupted_values) / golden.size / classified_tensors * 100
-    )
-    global_data["spatial_classes"] = sort_dict(
-        {
-            sp_class.display_name(): sp_class_count[sp_class.display_name()]
-            for sp_class in SpatialClass
-        }
-    )
-    global_data["spatial_classes_pct"] = sort_dict(
-        {
-            sp_class.display_name(): sp_class_count[sp_class.display_name()]
-            for sp_class in SpatialClass
-        }
-    )
-
-    global_data["domain_classes"] = sort_dict(dom_class_count)
-    global_data["domain_classes_pct"] = sort_dict(
-        {
-            dom_class: float(freq) / golden.size / classified_tensors * 100
-            for dom_class, freq in dom_class_count.items()
-        }
-    )
-    global_data["corrupt_cardinality"] = sort_dict(corrupt_cardinality)
-
-    global_data["corrupt_cardinality_pct"] = (
-        {
-            n_errors: freq / global_data["corrupted_values"] * 100
-            for n_errors, freq in corrupt_cardinality.items()
-        },
-    )
-    global_data["raveled_patterns"] = OrderedDict(
-        sorted(
-            [
-                (pattern, freq)
-                for pattern, freq in raveled_patterns.items()
-                if freq > 5 / 100 * len(raveled_patterns)
-            ],
-            key=lambda x: x[1],
-            reverse=True,
-        )
-    )
-    main_report["metadata"] = metadata
-    main_report["global_data"] = global_data
-    main_report["tensors"] = tensor_report
-
-    if save_report:
-        report_path = report_output_path
-
-        with open(report_path, "w") as f:
-            f.writelines(json.dumps(main_report, indent=2))
-
-    return main_report

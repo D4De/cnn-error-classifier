@@ -1,4 +1,5 @@
 from math import sqrt
+import math
 import os
 from typing import Iterable, Tuple, Union
 
@@ -23,17 +24,8 @@ def split_two(num: int) -> Tuple[int, int]:
     Given a number [num] of plots returns the optimal arrangment for displaying
     the subplot in a 2D grid.
     """
-    if num == 1:
-        return 1, 1
-    if is_square(num):
-        return int(sqrt(num)), int(sqrt(num))
-
-    radix = int(sqrt(num))
-
-    while num % radix != 0:
-        radix -= 1
-
-    return radix, num // radix
+    val = int(math.ceil(sqrt(num)))
+    return val, val
 
 
 def is_square(apositiveint: int) -> bool:
