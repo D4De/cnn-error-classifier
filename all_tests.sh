@@ -5,7 +5,6 @@ python src/main.py data/input/batch_activation_1/sigmoid test/output_1.npy test 
 python src/main.py data/input/batch_activation_1/elu test/output_1.npy test data/output_new_new/batch_activation_1_elu --classes S1 elu -p 7 
 python src/main.py data/input/batch_pool_1/avg test/output_1.npy test data/output_new_new/batch_pool_1_avg --classes S1 avgpool -p 7
 python src/main.py data/input/batch_pool_1/max test/output_1.npy test data/output_new_new/batch_pool_1_max --classes S1 maxpool -p 7
-python src/main.py data/input/batch_batchnorm_1 test/output_1.npy test data/output_new_new/batch_batchnorm_1 --classes S1 batchnorm -p 7
-python src/main.py data/input/batch_batchnorm_2 test/output_1.npy test data/output_new_new/batch_batchnorm_2 --classes S1 batchnorm -p 7
+python src/main.py data/input/batch_batchnorm_1_merged test/output_1.npy test data/output_new_new/batch_batchnorm_1_merged --classes S1 batchnorm -p 7
 python src/main.py data/input/batch_bias_add_1 test/output_1.npy test data/output_new_new/batch_bias_add_1 --classes S1 bias_add -p 7 
 python src/main.py data/input/batch_conv_3 test/output_1.npy test data/output_new_new/batch_conv_3 --classes S1 conv -p 7

@@ -2,6 +2,7 @@ from typing import Dict, Iterable, Tuple
 
 from coordinates import Coordinates
 
+
 def same_column_pattern(
     sparse_diff: Iterable[Coordinates],
     shape: Coordinates,
@@ -29,6 +30,3 @@ def same_column_pattern(
         "max_h_offset": max_h_offset,
         "MAX": [max_h_offset],
     }
-
-
-

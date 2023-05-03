@@ -30,7 +30,13 @@ LAYOUTS = {
 }
 
 
-def map_to_coordinates(native_coord: tuple, layout: TensorLayout) -> Coordinates:
+def map_to_coordinates(
+    native_coord: Tuple[int, int, int, int], layout: TensorLayout
+) -> Coordinates:
+    """
+    Transform a tuple containing 4 int values to a Coordinates object. The transformation is done accordingly to the layout specified in
+    the argument
+    """
     selected_layout = LAYOUTS[layout]
     return Coordinates(*[native_coord[new_idx] for new_idx in selected_layout])
 
@@ -46,6 +52,7 @@ def raveled_channel_index(shape: Coordinates, coordinate: Coordinates) -> int:
     """
     return coordinate.W + shape.W * coordinate.H
 
+
 def raveled_tensor_index(shape: Coordinates, coordinate: Coordinates) -> int:
     """
     Takes in input the shape of a tensor and a coordinate. coordinate must be within the shape
@@ -55,7 +62,8 @@ def raveled_tensor_index(shape: Coordinates, coordinate: Coordinates) -> int:
     This index reflects the fact that the channel is raveled inside the memory using a row major order, so the last item of a row is
     followed by the first item of the next row, and that the channel are stored in memory contigously
     """
-    return coordinate.C * (shape.H * shape.W) + shape.W * coordinate.H + coordinate.W 
+    return coordinate.C * (shape.H * shape.W) + shape.W * coordinate.H + coordinate.W
+
 
 def identify_block_length(
     indexes: Iterable[int],
@@ -78,3 +86,6 @@ def identify_block_length(
     else:
         return None
 
+
+def numpy_coords_to_python_coord(coords: tuple):
+    return tuple(coord.item() for coord in coords)

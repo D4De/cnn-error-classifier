@@ -2,6 +2,7 @@ from typing import Dict, Iterable, Tuple
 
 from coordinates import Coordinates, identify_block_length, raveled_tensor_index
 
+
 def single_block_pattern(
     sparse_diff: Iterable[Coordinates],
     shape: Coordinates,
@@ -14,7 +15,7 @@ def single_block_pattern(
         return False, {}
     block_length, aligment_offset, block_id = result
     # Pattern: (<Block Length>, ([... <tensor indices based from begin of the block>]))
-    error_pattern = (block_length,  tuple(idx - block_begin for idx in indexes))
+    error_pattern = (block_length, tuple(idx - block_begin for idx in indexes))
     return True, {
         "error_pattern": error_pattern,
         "block_length": block_length,

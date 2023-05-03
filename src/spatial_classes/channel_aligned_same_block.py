@@ -5,7 +5,6 @@ from typing import Dict, Iterable, Tuple
 from coordinates import Coordinates, raveled_channel_index
 
 
-
 def channel_aligned_same_block_pattern(
     sparse_diff: Iterable[Coordinates],
     shape: Coordinates,
@@ -67,7 +66,7 @@ def channel_aligned_same_block_pattern(
     # Use integer division to calculate the block of the coordinate
     block_id = defaultdict(int)
     for coord in coordinates:
-        block_id[coord//align] += 1
+        block_id[coord // align] += 1
     # There must not be errors outside of the block
 
     if len(block_id) == 1:
@@ -79,7 +78,7 @@ def channel_aligned_same_block_pattern(
             return False, {}
     else:
         return False, {}
-    
+
     the_block_id = next(iter(block_id))
     indexes_by_channel = defaultdict(list)
     min_c = min(coord.C for coord in sparse_diff)

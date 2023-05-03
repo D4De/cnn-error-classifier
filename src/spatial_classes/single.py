@@ -12,7 +12,8 @@ def single_pattern(
         return True, {"error_pattern": 0}
     else:
         return False, {}
-    
+
+
 def single_classifier(
     sparse_diff: Iterable[Coordinates],
     shape: Coordinates,

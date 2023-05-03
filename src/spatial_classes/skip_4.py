@@ -4,6 +4,7 @@ from typing import Dict, Iterable, Tuple
 
 from coordinates import Coordinates, raveled_channel_index
 
+
 def skip_4_pattern(
     sparse_diff: Iterable[Coordinates],
     shape: Coordinates,

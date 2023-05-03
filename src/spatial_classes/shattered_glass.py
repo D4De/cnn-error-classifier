@@ -4,6 +4,7 @@ from typing import Dict, Iterable, Tuple
 
 from coordinates import Coordinates
 
+
 def shattered_glass_pattern(
     sparse_diff: Iterable[Coordinates],
     shape: Coordinates,

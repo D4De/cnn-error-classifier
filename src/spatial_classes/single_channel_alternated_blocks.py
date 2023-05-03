@@ -4,6 +4,7 @@ from typing import Dict, Iterable, Tuple
 
 from coordinates import Coordinates, raveled_channel_index
 
+
 def single_channel_alternated_blocks_pattern(
     sparse_diff: Iterable[Coordinates],
     shape: Coordinates,
@@ -22,7 +23,7 @@ def single_channel_alternated_blocks_pattern(
     for i in range(1, len(blocks_affected)):
         if blocks_affected[i] - blocks_affected[i - 1] < 2:
             return False, {}
-    # Check that every block has enough elements    
+    # Check that every block has enough elements
     if chan_size % align != 0:
         # Last block is exempt from the check, if it is a remainder block
         exempt_channels = set([chan_size // align])
@@ -33,7 +34,7 @@ def single_channel_alternated_blocks_pattern(
         corrupted_elements = sum(1 for idx in error_indexes if idx // align == block_id)
         if corrupted_elements < align // 2:
             return False, {}
-    
+
     min_block = blocks_affected[0]
     zero_idx = min_block * align
     max_idx = error_indexes[-1] - zero_idx
