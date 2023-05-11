@@ -1,0 +1,98 @@
+{
+    "name": "8_6_cudnn_patterns",
+    "version": 1,
+    "spatial_classes": {
+        "SINGLE": {
+            "classes_id": null
+        },
+        "SAME_ROW": {
+            "classes_id": "0"
+        },
+        "SINGLE_MAP_RANDOM": {
+            "classes_id": "3"
+        },
+        "BULLET_WAKE": {
+            "classes_id": "4"
+        },
+        "SKIP_4": {
+            "classes_id": "1001"
+        },
+        "MULTIPLE_MAP_RANDOM": {
+            "classes_id": "8"
+        },
+        "SINGLE_BLOCK": {
+            "classes_id": "1004"
+        },
+        "MULTI_CHANNEL_BLOCK": {
+            "classes_id": "1005"
+        },
+        "SHATTERED_CHANNEL": {
+            "classes_id": "1006"
+        },
+        "QUASI_SHATTERED_CHANNEL": {
+            "classes_id": "1007"
+        },
+        "SINGLE_CHANNEL_ALTERNATED_BLOCKS": {
+            "classes_id": "1008"
+        }
+    },
+    "classifier_config": {
+        "single_channel": [
+            {
+                "classifier": "single",
+                "class": "SINGLE"
+            },
+            {
+                "classifier": "skip_4",
+                "class": "SKIP_4"
+            },
+            {
+                "classifier": "single_block",
+                "class": "SINGLE_BLOCK"
+            },
+            {
+                "classifier": "single_channel_alternated_blocks",
+                "class": "SINGLE_CHANNEL_ALTERNATED_BLOCKS"
+            },
+            {
+                "classifier": "same_row",
+                "class": "SAME_ROW"
+            },
+            {
+                "classifier": "random",
+                "class": "SINGLE_MAP_RANDOM"
+            }
+        ],
+        "multi_channel": [
+            {
+                "classifier": "skip_4",
+                "class": "SKIP_4"
+            },
+            {
+                "classifier": "single_block",
+                "class": "SINGLE_BLOCK"
+            },
+            {
+                "classifier": "multi_channel_multi_block",
+                "class": "MULTI_CHANNEL_BLOCK"
+            },
+            {
+                "classifier": "bullet_wake",
+                "class": "BULLET_WAKE"
+            },
+            {
+                "classifier": "shattered_channel",
+                "class": "SHATTERED_CHANNEL"
+            },
+            {
+                "classifier": "quasi_shattered_channel",
+                "class": "QUASI_SHATTERED_CHANNEL"            
+            },
+            {
+                "classifier": "random",
+                "class": "MULTIPLE_MAP_RANDOM"
+            }
+        ]
+    }
+
+}
