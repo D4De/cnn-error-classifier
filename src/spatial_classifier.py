@@ -17,6 +17,7 @@ from spatial_classes.single_block import single_block_pattern
 from spatial_classes.single_channel_alternated_blocks import (
     single_channel_alternated_blocks_pattern,
 )
+from spatial_classes.skip_2 import skip_2_pattern
 from spatial_classes.skip_4 import skip_4_pattern
 from spatial_classes.tensor_aligned_single_block import (
     tensor_aligned_single_block_pattern,
@@ -65,6 +66,8 @@ def to_classes_id(name) -> str:
         return "1007"
     elif name == SpatialClass.SINGLE_CHANNEL_ALTERNATED_BLOCKS.display_name():
         return "1008"
+    elif name == SpatialClass.SKIP_2.display_name():
+        return "1009"
     elif name == SpatialClass.FULL_CHANNELS.display_name():
         return "1010"
 class SpatialClass(Enum):
@@ -86,6 +89,7 @@ class SpatialClass(Enum):
     SHATTERED_CHANNEL = 15
     QUASI_SHATTERED_CHANNEL = 16
     SINGLE_CHANNEL_ALTERNATED_BLOCKS = 17
+    SKIP_2 = 18
     FULL_CHANNELS = 19
 
     def display_name(self) -> str:
@@ -108,6 +112,7 @@ SINGLE_CHANNEL_CLASSIFIERS_NEW = OrderedDict(
     [
         (SpatialClass.SINGLE, single_pattern),
         (SpatialClass.SKIP_4, skip_4_pattern),
+        (SpatialClass.SKIP_2, skip_2_pattern),
         (SpatialClass.SINGLE_BLOCK, single_block_pattern),
         (
             SpatialClass.SINGLE_CHANNEL_ALTERNATED_BLOCKS,
@@ -125,6 +130,7 @@ Defines how a faulty tensor with a single corrupted channel must be processed in
 MULTI_CHANNEL_CLASSIFIERS_NEW = OrderedDict(
     [
         (SpatialClass.SKIP_4, skip_4_pattern),
+        (SpatialClass.SKIP_2, skip_2_pattern),
         (SpatialClass.SINGLE_BLOCK, single_block_pattern),
         (SpatialClass.MULTI_CHANNEL_BLOCK, multi_channel_multi_block_pattern),
         (SpatialClass.BULLET_WAKE, bullet_wake_pattern),
