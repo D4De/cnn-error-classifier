@@ -1,5 +1,5 @@
 from collections import OrderedDict, defaultdict
-from typing import Any, Callable, Tuple
+from typing import Any, Callable, Dict, Tuple, TypeVar
 
 
 def int_defaultdict() -> defaultdict[Any, int]:
@@ -13,20 +13,22 @@ def double_int_defaultdict() -> defaultdict[Any, int]:
 def list_defaultdict() -> defaultdict[Any, list]:
     return defaultdict(list)
 
+K = TypeVar("K")
+V = TypeVar("V")
 
 def sort_dict(
-    data: dict,
-    sort_key: Callable[[Tuple[Any, Any]], Any] = lambda x: x[1],
-    reverse=True,
-):
+    data: Dict[K, V],
+    sort_key: Callable[[Tuple[K, V]], Any] = lambda x: x[1],
+    reverse=False,
+) -> OrderedDict[K, V]:
     """
     Returns an OrderedDict. Items are sorted and inserted inside the OrderedDict following a sorting order specified in the parameters of this function
 
-    data : dict
+    data : Dict[K, V]
     ---
     Any dictionary to sort
 
-    sort_key : Callable[[Tuple[Any, Any]], Any]
+    sort_key : Callable[[Tuple[K, V]], Any]
     ---
     A function that takes in input a tuple (key and value of a dictionary entry) and returns a value that will be used as sorting key
     If not specified the dictionary will be sorted against the values
