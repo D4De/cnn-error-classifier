@@ -109,6 +109,47 @@ def calculate_classes_cardinalities_and_spatial(results : Iterable[AnalyzedTenso
 
 
 
+def absolute_new_awesome_generator(results : Iterable[AnalyzedTensor]):
+    total_count = len(results)
+    # Dictionary containing all the counts 
+    cardinalities = count_by(results, key=lambda x: x.corrupted_values_count)    
+    cardinalities_dict = {cardinality : count for cardinality, count in cardinalities.items() if count >= 5}
+    max_cardinality = max(cardinalities.keys())
+    sum_random_cardinalities = sum(count for count in cardinalities.values() if count < 5)
+    
+    results_by_cardinality = group_by(results, key=lambda x: x.corrupted_values_count)
+
+    spatial_dict : Dict[int, Dict[str, Dict[str, float]]] = OrderedDict()
+
+    for cardinality, cardinality_results in results_by_cardinality.items():
+        if cardinality not in cardinalities_dict:
+            continue
+        if cardinality == 1:
+            spatial_dict[1] = {"RANDOM": 1.0}
+            continue
+        cardinality_total_count = cardinalities[cardinality]
+        counts_by_sp_class = group_by(cardinality_results, key=lambda x: x.spatial_class)
+        spurious_sp_classes = {sp_class : count for sp_class, count in counts_by_sp_class if count < 5}
+        
+
+
+
+        
+
+        # Key: Spatial Class ID, Value: Relative Frequqncy of the spatial class given the current cardinality
+        ff_spatial = OrderedDict()
+        # Key: Spatial Class ID, Value: A dictionary
+        # The sub-dictionary contains
+        # Keys: The spatial pattern (parameters of the pattern) or "RANDOM" or "MAX"
+        # Values: Relative frequency of the spatial pattern given the current cardinality and the spatial pattern
+        pf_spatial = OrderedDict()
+
+    
+    cardinalities_dict |= {"RANDOM": sum_random_cardinalities, "MAX": max_cardinality}
+
+    results_by_cardinality = group_by(results, key=lambda x: x.corrupted_values_count)
+
+
 def calculate_value_analysis(results : Iterable[AnalyzedTensor]) -> str:
     counts : defaultdict[DomainClass, int] = defaultdict(int)
     corrupted_vales = 0

@@ -8,7 +8,8 @@ import os
 from tqdm import tqdm
 import json
 import sys
-from aggregators import cardinalities_counts, spatial_classes_counts
+from aggregators import cardinalities_counts, classes_triple_counts, domain_classes_counts, domain_classes_types_counts, spatial_classes_counts
+from analyzed_tensor import AnalyzedTensor
 from args import Args, create_parser
 from batch_analyzer import analyze_batch
 import numpy as np
@@ -189,23 +190,31 @@ def main():
         final_result = result.get()
     progress_process.join()
 
-    analyzed_tensors = []
+    analyzed_tensors : List[AnalyzedTensor]= []
+    metadata_dicts = []
 
     for batch_result in final_result:
         if batch_result is not None:
-            analyzed_tensors += batch_result
+            tensor_list, metadata = batch_result
+            analyzed_tensors += tensor_list
+            metadata_dicts += metadata
     # Calculate cumulative metrics
     result_count = len(analyzed_tensors)
 
     # Generate the json files of errors models needed in the CLASSES framework (if option --classes is specified in arguments)
     if args.classes is not None and result_count > 0:
         generate_classes_models_old(analyzed_tensors, args)
-
     global_report["classified_tensors"] = result_count
     global_report["spatial_classes"] = spatial_classes_counts(analyzed_tensors)
+    global_report["domain_classes_types_per_tensor"] = domain_classes_types_counts(analyzed_tensors)
+    global_report["domain_classes_counts"] = domain_classes_counts(analyzed_tensors)
     global_report["cardinalities"] = cardinalities_counts(analyzed_tensors)
+
     with open(os.path.join(args.output_dir, "global_report.json"), "w") as f:
         f.writelines(json.dumps(global_report, indent=2))
+    
+    with open(os.path.join(args.output_dir, "stats.json"), "w") as f:
+        json.dump(classes_triple_counts(analyzed_tensors), f)
 
 
 if __name__ == "__main__":

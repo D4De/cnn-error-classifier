@@ -2,7 +2,7 @@
 import json
 from multiprocessing import Queue
 import os
-from typing import List, Union
+from typing import Any, Dict, List, Tuple, Union
 from analyzed_tensor import AnalyzedTensor
 
 from args import Args
@@ -14,7 +14,7 @@ from sub_batch_analyzer import analyze_tensor_directory
 
 def analyze_batch(
     batch_path: str, args: Args, queue: Union[Queue, None]
-) -> Union[List[AnalyzedTensor], None]:
+) -> Union[Tuple[List[AnalyzedTensor], Dict[str, Any]], None]:
     """
     Analyze a single batch of tensors
 
@@ -63,12 +63,18 @@ def analyze_batch(
 
     # Retrieve metadata from info.json file (if they exist)
     metadata_path = os.path.join(faulty_path, "info.json")
+    stats_path = os.path.join(faulty_path, "stats.json")
+
+    metadata = {"batch_name": batch_name}
 
     if os.path.exists(metadata_path):
         with open(metadata_path, "r") as f:
-            metadata = json.loads(f.read())
-    else:
-        metadata = {}
+            metadata |= json.load(f)
+    
+    if os.path.exists(stats_path):
+         with open(stats_path, "r") as f:
+            metadata |= json.load(f)    
+    
 
     sub_batch_dir = [
         os.path.join(faulty_path, dir)
@@ -111,7 +117,7 @@ def analyze_batch(
 
         batch_analyzed_tensors += sub_batch_analyzed_tensors
 
-    return batch_analyzed_tensors
+    return batch_analyzed_tensors, metadata
 
     
 

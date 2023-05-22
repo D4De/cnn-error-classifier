@@ -148,7 +148,7 @@ def analyze_tensor(
         spatial_class_params=pattern_params,
         spatial_pattern=pattern_params.get("error_pattern"),
         domain_classes_counts= {
-            clz.display_name(): temp_dom_class_count[i].item()
+            clz: temp_dom_class_count[i].item()
             for i, clz in enumerate(DomainClass)
         },
         corrupted_channels_count=len(set(x.C for x in sparse_diff)),
