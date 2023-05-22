@@ -112,14 +112,14 @@ SINGLE_CHANNEL_CLASSIFIERS_NEW = OrderedDict(
     [
         (SpatialClass.SINGLE, single_pattern),
         (SpatialClass.SKIP_4, skip_4_pattern),
-        (SpatialClass.SKIP_2, skip_2_pattern),
+#        (SpatialClass.SKIP_2, skip_2_pattern),
         (SpatialClass.SINGLE_BLOCK, single_block_pattern),
         (
             SpatialClass.SINGLE_CHANNEL_ALTERNATED_BLOCKS,
             single_channel_alternated_blocks_pattern,
         ),
         (SpatialClass.SAME_ROW, same_row_pattern),
-        (SpatialClass.FULL_CHANNELS, full_channels_pattern),
+#        (SpatialClass.FULL_CHANNELS, full_channels_pattern),
         (SpatialClass.SINGLE_MAP_RANDOM, random_pattern),
     ]
 )
@@ -130,11 +130,11 @@ Defines how a faulty tensor with a single corrupted channel must be processed in
 MULTI_CHANNEL_CLASSIFIERS_NEW = OrderedDict(
     [
         (SpatialClass.SKIP_4, skip_4_pattern),
-        (SpatialClass.SKIP_2, skip_2_pattern),
+#        (SpatialClass.SKIP_2, skip_2_pattern),
         (SpatialClass.SINGLE_BLOCK, single_block_pattern),
         (SpatialClass.MULTI_CHANNEL_BLOCK, multi_channel_multi_block_pattern),
         (SpatialClass.BULLET_WAKE, bullet_wake_pattern),
-        (SpatialClass.FULL_CHANNELS, full_channels_pattern),
+#        (SpatialClass.FULL_CHANNELS, full_channels_pattern),
         (SpatialClass.SHATTERED_CHANNEL, shattered_channel_pattern),
         (SpatialClass.QUASI_SHATTERED_CHANNEL, quasi_shattered_channel_pattern),
         (SpatialClass.MULTIPLE_MAP_RANDOM, random_pattern),
