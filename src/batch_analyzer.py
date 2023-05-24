@@ -63,7 +63,7 @@ def analyze_batch(
 
     # Retrieve metadata from info.json file (if they exist)
     metadata_path = os.path.join(faulty_path, "info.json")
-    stats_path = os.path.join(faulty_path, "stats.json")
+    stats_path = os.path.join(faulty_path, "injection-counts.json")
 
     metadata = {"batch_name": batch_name}
 
@@ -73,7 +73,7 @@ def analyze_batch(
     
     if os.path.exists(stats_path):
          with open(stats_path, "r") as f:
-            metadata |= json.load(f)    
+            metadata["experiment_counts"] = json.load(f)
     
 
     sub_batch_dir = [

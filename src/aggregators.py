@@ -1,6 +1,6 @@
 from collections import defaultdict
 from operator import itemgetter
-from typing import Callable, Dict, Iterable, List, Tuple, TypeVar
+from typing import Callable, Dict, Iterable, List, Tuple, TypeVar, Union
 
 from analyzed_tensor import AnalyzedTensor
 from domain_classifier import DomainClass
@@ -42,7 +42,7 @@ def cardinalities_counts(results : List[AnalyzedTensor]) -> Dict[int, int]:
 
 def classes_triple_counts(results : List[AnalyzedTensor]) -> Dict[str, int]:
     def triple_maker(x : AnalyzedTensor):
-        if x.corrupted_channels_count == 1:
+        if x.corrupted_values_count == 1:
             return "(1,-1,0)"
         return str((x.corrupted_values_count, x.spatial_class.display_name(), x.spatial_pattern))
     return sort_dict(count_by(results, key=triple_maker), sort_key=itemgetter(1), reverse=True)
@@ -55,8 +55,23 @@ def domain_classes_counts(results : List[AnalyzedTensor]) -> Dict[str, int]:
 
     return counts
 
+def experiment_counts(metadata_list : List[dict]) -> Union[Tuple[int, Dict[str, int]], Tuple[None, None]]:
+    counts = defaultdict(int)
+    total_count = 0
+    for metadata in metadata_list:
+        if "experiment_counts" not in metadata:
+            return None, None
+        batch_counts = metadata["experiment_counts"]
+        for type, exps in batch_counts.items():
+            counts[type] += exps
+            total_count += exps
+    return total_count, counts
+
 def domain_classes_types_counts(results : List[AnalyzedTensor]) -> Dict[str, int]:
-    type_counts = defaultdict(int)
+    type_counts = {}
+
+    for type in ["(RANDOM)", "(OFF_BY_ONE)", "(NAN)", "UNCATEGORIZED", "(RANDOM, OFF_BY_ONE)", "(RANDOM, SINGLE_NAN)", "(RANDOM, MULTIPLE_NAN)"]:
+        type_counts[type] = 0
     for result in results:
         dom_classes_counts = result.domain_classes_counts
         non_zero_dom_classes = [dom_class for dom_class, count in dom_classes_counts.items() if count > 0 and dom_class != DomainClass.SAME and dom_class != DomainClass.ALMOST_SAME]
@@ -68,7 +83,7 @@ def domain_classes_types_counts(results : List[AnalyzedTensor]) -> Dict[str, int
                 type_counts["(OFF_BY_ONE)"] += 1                
             elif the_dom_class == DomainClass.NAN:
                 type_counts["(NAN)"] += 1
-            elif the_dom_class == DomainClass.FLIP:
+            else:
                 type_counts["UNCATEGORIZED"] += 1
         elif len(non_zero_dom_classes) == 2:
             non_zero_dom_classes_set = set(non_zero_dom_classes)
@@ -80,6 +95,9 @@ def domain_classes_types_counts(results : List[AnalyzedTensor]) -> Dict[str, int
                     type_counts["(RANDOM, SINGLE_NAN)"] += 1
                 else:
                     type_counts["(RANDOM, MULTIPLE_NAN)"] += 1
+        else:
+            type_counts["UNCATEGORIZED"] += 1
+
         
     return type_counts
 
