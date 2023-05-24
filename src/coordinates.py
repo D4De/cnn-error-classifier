@@ -29,6 +29,8 @@ LAYOUTS = {
     TensorLayout.NCHW: Coordinates(0, 2, 3, 1),
 }
 
+def coordinates_to_tuple(coords: Coordinates, layout = TensorLayout.NCHW) -> tuple:
+    return tuple(coords._asdict()[k] for k in layout.name)
 
 def map_to_coordinates(
     native_coord: Tuple[int, int, int, int], layout: TensorLayout

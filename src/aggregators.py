@@ -3,6 +3,7 @@ from operator import itemgetter
 from typing import Callable, Dict, Iterable, List, Tuple, TypeVar, Union
 
 from analyzed_tensor import AnalyzedTensor
+from coordinates import coordinates_to_tuple
 from domain_classifier import DomainClass
 from utils import sort_dict
 
@@ -17,11 +18,11 @@ def group_by(results : Iterable[S], key : Callable[[S],T]) -> Dict[T, List[S]]:
     
     return groups
 
-def count_by(results : Iterable[S], key : Callable[[S],T]) -> Dict[T, int]:
+def count_by(results : Iterable[S], key : Callable[[S],T], count_funct : Callable[[S], int] = lambda x: 1) -> Dict[T, int]:
     counts : defaultdict[T, int] = defaultdict(int)
     
     for result in results:
-        counts[key(result)] += 1
+        counts[key(result)] += count_funct(result)
 
     return counts
 
@@ -67,6 +68,14 @@ def experiment_counts(metadata_list : List[dict]) -> Union[Tuple[int, Dict[str, 
             total_count += exps
     return total_count, counts
 
+def tensor_count_by_sub_batch(results : List[AnalyzedTensor]) -> Dict[str, int]:
+    return count_by(results, key=lambda x: x.metadata.get("sub_batch_name"))
+
+
+def tensor_count_by_shape(results : List[AnalyzedTensor]) -> Dict[str, int]:
+    return count_by(results, key=lambda x: str(coordinates_to_tuple(x.shape)))
+
+
 def domain_classes_types_counts(results : List[AnalyzedTensor]) -> Dict[str, int]:
     type_counts = {}
 
@@ -101,4 +110,9 @@ def domain_classes_types_counts(results : List[AnalyzedTensor]) -> Dict[str, int
         
     return type_counts
 
-            
+def domain_class_type_per_spatial_class(result : List[AnalyzedTensor]) -> Dict[str, Dict[str, int]]:
+    sp_classes_group = group_by(result, lambda x: x.spatial_class.display_name())
+    result_dict = {}
+    for sp_class, tensors in sp_classes_group.items():
+        result_dict[sp_class] = domain_classes_types_counts(tensors)
+    return result_dict

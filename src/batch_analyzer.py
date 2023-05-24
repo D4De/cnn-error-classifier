@@ -10,7 +10,18 @@ import logging as log
 import numpy as np
 from coordinates import map_to_coordinates
 from sub_batch_analyzer import analyze_tensor_directory
+import re
 
+def get_igprofile_kernels(text : str) -> List[str]:
+    kernel_names = []
+
+    pattern = r'kernel_name: ([^<\(]+)'
+    matches = re.findall(pattern, text)
+    
+    for match in matches:
+        kernel_names.append(match.strip())
+    
+    return kernel_names
 
 def analyze_batch(
     batch_path: str, args: Args, queue: Union[Queue, None]
@@ -64,6 +75,7 @@ def analyze_batch(
     # Retrieve metadata from info.json file (if they exist)
     metadata_path = os.path.join(faulty_path, "info.json")
     stats_path = os.path.join(faulty_path, "injection-counts.json")
+    nvbitfi_igprofile_path = os.path.join(faulty_path, "nvbitfi-igprofile.txt")
 
     metadata = {"batch_name": batch_name}
 
@@ -74,6 +86,12 @@ def analyze_batch(
     if os.path.exists(stats_path):
          with open(stats_path, "r") as f:
             metadata["experiment_counts"] = json.load(f)
+    
+    if os.path.exists(nvbitfi_igprofile_path):
+        with open(nvbitfi_igprofile_path, "r") as f:
+            text = f.read()
+            metadata["igprofile_kernels"] = get_igprofile_kernels(text)
+            
     
 
     sub_batch_dir = [
@@ -103,6 +121,7 @@ def analyze_batch(
         sub_batch_metadata = metadata | {
             "igid": igid,
             "bfm": bfm,
+            "shape": golden.shape,
             "batch_name": batch_name,
             "sub_batch_name": sub_batch_name
         }

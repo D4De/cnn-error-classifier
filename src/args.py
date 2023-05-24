@@ -89,6 +89,11 @@ class Args:
     The number of parallel processes
     """
 
+    database: bool
+    """
+    Store experiment data in a sqlite database file
+    """
+
     @classmethod
     def from_argparse(cls, args: Namespace) -> Args:
         """
@@ -113,6 +118,7 @@ class Args:
             visualize_path=os.path.join(args.output_dir, "visualize"),
             reports_path=os.path.join(args.output_dir, "reports"),
             parallel=args.parallel,
+            database=args.database,
         )
 
 
@@ -186,6 +192,12 @@ def create_parser() -> ArgumentParser:
         help="Generate models for classes",
     )
 
+    parser.add_argument(
+        "-db",
+        "--database",
+        action="store_true",
+        help="Store results in a sqlite database",
+    )
     tensor_format_group = parser.add_mutually_exclusive_group()
     tensor_format_group.add_argument(
         "-nchw",

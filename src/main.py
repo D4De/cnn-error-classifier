@@ -8,12 +8,13 @@ import os
 from tqdm import tqdm
 import json
 import sys
-from aggregators import cardinalities_counts, classes_triple_counts, domain_classes_counts, domain_classes_types_counts, experiment_counts, spatial_classes_counts
+from aggregators import cardinalities_counts, classes_triple_counts, domain_class_type_per_spatial_class, domain_classes_counts, domain_classes_types_counts, experiment_counts, spatial_classes_counts, tensor_count_by_shape, tensor_count_by_sub_batch
 from analyzed_tensor import AnalyzedTensor
 from args import Args, create_parser
 from batch_analyzer import analyze_batch
 import numpy as np
 from classes import generate_classes_models_old
+from db import create_db, delete_db, put_experiment_data
 
 REPORT_FILE = "report.json"
 TOP_PATTERNS_PCT = 5
@@ -157,6 +158,11 @@ def main():
         clear_spatial_classification_folders(args.visualize_path)
         # Create output folder structure (if not exists already)
         create_visual_spatial_classification_folders(args.visualize_path)
+    
+    if args.database:
+        db_path = os.path.join(args.output_dir, 'experiments.sqlite')
+        delete_db(db_path)
+
     # workload == number of tensors to analyze in all batches (for progress bar)
     n_tensors, n_values, batch_sizes = precalculate_workload(
         test_batches_paths, args.faulty_path, args.golden_path
@@ -204,14 +210,27 @@ def main():
     # Generate the json files of errors models needed in the CLASSES framework (if option --classes is specified in arguments)
     if args.classes is not None and result_count > 0:
         generate_classes_models_old(analyzed_tensors, args)
+    
+    if args.database:
+        db_path = os.path.join(args.output_dir, 'experiments.sqlite')
+        try:
+            create_db(db_path)
+            put_experiment_data(db_path, analyzed_tensors)
+            log.info(f"Saved experiments in {db_path}")
+        except Exception as e:
+            log.error(f"Exception {e} happened while saving to the db")
+
 
 
     total_experiments, experiments_by_types = experiment_counts(metadata_dicts)
     global_report["total_experiments"] = total_experiments
     global_report["experiment_by_types"] = experiments_by_types
+    global_report["tensors_by_sub_batch"] = tensor_count_by_sub_batch(analyzed_tensors)
+    global_report["tensors_by_shape"] = tensor_count_by_shape(analyzed_tensors)
     global_report["classified_tensors"] = result_count
     global_report["spatial_classes"] = spatial_classes_counts(analyzed_tensors)
     global_report["domain_classes_types_per_tensor"] = domain_classes_types_counts(analyzed_tensors)
+    global_report["domain_classes_types_per_sp_class"] = domain_class_type_per_spatial_class(analyzed_tensors)
     global_report["domain_classes_counts"] = domain_classes_counts(analyzed_tensors)
     global_report["cardinalities"] = cardinalities_counts(analyzed_tensors)
 
