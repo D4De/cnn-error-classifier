@@ -76,7 +76,7 @@ def analyze_batch(
     metadata_path = os.path.join(faulty_path, "info.json")
     stats_path = os.path.join(faulty_path, "injection-counts.json")
     nvbitfi_igprofile_path = os.path.join(faulty_path, "nvbitfi-igprofile.txt")
-
+    nvbitfi_igprofile_alt_path = os.path.join(args.root_path, "_profiler", batch_name, "nvbitfi-igprofile.txt")
     metadata = {"batch_name": batch_name}
 
     if os.path.exists(metadata_path):
@@ -89,6 +89,10 @@ def analyze_batch(
     
     if os.path.exists(nvbitfi_igprofile_path):
         with open(nvbitfi_igprofile_path, "r") as f:
+            text = f.read()
+            metadata["igprofile_kernels"] = get_igprofile_kernels(text)
+    elif os.path.exists(nvbitfi_igprofile_alt_path):
+        with open(nvbitfi_igprofile_alt_path, "r") as f:
             text = f.read()
             metadata["igprofile_kernels"] = get_igprofile_kernels(text)
             

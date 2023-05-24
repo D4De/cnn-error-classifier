@@ -11,10 +11,11 @@ CREATE TABLE Experiment (
     C INT NOT NULL,
     W INT NOT NULL,
     spatial_class TEXT,
-    spatial_class_params TEXT,
+    spatial_class_params JSON,
     spatial_pattern TEXT,
-    domain_classes_counts TEXT,
+    domain_classes_counts JSON,
     corrupted_values_count INT,
     corrupted_channels_count INT,
-    layout TEXT
+    layout TEXT,
+    metadata JSON
 );

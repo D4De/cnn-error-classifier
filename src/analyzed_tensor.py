@@ -51,5 +51,6 @@ class AnalyzedTensor:
             json.dumps(domain_class_count_str),
             self.corrupted_values_count,
             self.corrupted_channels_count,
-            self.layout.name
+            self.layout.name,
+            json.dumps(self.metadata)
         ]
