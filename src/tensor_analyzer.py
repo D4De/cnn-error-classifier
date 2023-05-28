@@ -1,14 +1,16 @@
+from collections import defaultdict
 import os
 from typing import Any, Dict, Tuple, Union
 from args import Args
 
 from coordinates import TensorLayout, map_to_coordinates, numpy_coords_to_python_coord
-from domain_classifier import DomainClass
+from domain_classifier import ValueClass, domain_classification, value_classification
 from analyzed_tensor import AnalyzedTensor
 from spatial_classifier import spatial_classification
-from domain_classifier import domain_classification_vect
+from domain_classifier import value_classification_vect
 import logging as log
 import numpy as np
+import time
 
 from visualizer import visualize
 
@@ -63,8 +65,6 @@ def analyze_tensor(
 
     bfm and igid are derived from the name of the folders that contains faulty tensors. All these folders' names must have the following structure <bfm>_<igid>
     """
-    # Initialization
-    temp_dom_class_count = np.int64(np.zeros(len(DomainClass)))
 
     # Opening faulty tensor
     file_name = os.path.basename(file_path).split(".")[0]
@@ -78,7 +78,6 @@ def analyze_tensor(
 
     faulty_shape = map_to_coordinates(faulty.shape, args.layout)
     golden_shape = map_to_coordinates(golden.shape, args.layout)
-
     # Check shape correctness
     if faulty_shape != golden_shape:
         log.warn(
@@ -90,17 +89,20 @@ def analyze_tensor(
         log.warn(f"Skipping {file_path} not supported tensor (Batch dim > 1)")
         return "skipped", None
 
-    # Execute error domain classification on the whole tensor
-    tensor_diff = domain_classification_vect(golden, faulty, args.epsilon, args.almost_same)
-
-    # Count occourences of each domain class
-    cat, counts = np.unique(tensor_diff, return_counts=True)
-
-    for i in range(len(counts)):
-        temp_dom_class_count[cat[i]] = counts[i]
+    value_class_count = defaultdict(int)
 
     # Generate a list of all coordinates where a difference is observed (Sparse matrix)
-    sparse_diff_native_coords = list(zip(*np.where(tensor_diff > 0)))
+    sparse_diff_native_coords = list(zip(*np.nonzero(faulty - golden)))
+    faulty_native_shape = faulty.shape
+    tensor_diff = np.zeros(faulty_native_shape, dtype=np.int8)
+
+    for coord in sparse_diff_native_coords:
+        val_class = value_classification(golden[coord[0], coord[1], coord[2], coord[3]], faulty[coord[0], coord[1], coord[2], coord[3]], args.epsilon, args.almost_same)
+        tensor_diff[coord[0], coord[1], coord[2], coord[3]] = val_class.value
+        value_class_count[val_class] += 1
+    
+    value_class_count[ValueClass.SAME] = golden.size - sum(value_class_count.values())
+        
 
     # No diff = masked
     if len(sparse_diff_native_coords) == 0:
@@ -112,21 +114,14 @@ def analyze_tensor(
     ]
 
     # Pefmorm spatial classifcation
-    spatial_class, pattern_params = spatial_classification(sparse_diff, golden_shape)
+    spatial_class, pattern_params, faulty_channels = spatial_classification(sparse_diff, golden_shape)
+    domain_class = domain_classification(value_class_count)
 
-    # Get faults for each channel
-    # faulty_channels = {coord.C for coord in sparse_diff}
-    if args.layout == TensorLayout.NCHW:
-        channel_sums = np.sum(tensor_diff, axis=(0, 2, 3))
-    elif args.layout == TensorLayout.NHWC:
-        channel_sums = np.sum(tensor_diff, axis=(0, 1, 2))
-
-    (faulty_channels,) = np.where(channel_sums != 0)
 
     if args.visualize:
         visualize(
             tensor_diff,
-            faulty_channels.tolist(),
+            faulty_channels,
             args.layout,
             spatial_class.output_path(
                 args.visualize_path, f'{metadata["batch_name"]}_{file_name}'
@@ -147,12 +142,10 @@ def analyze_tensor(
         spatial_class=spatial_class,
         spatial_class_params=pattern_params,
         spatial_pattern=pattern_params.get("error_pattern"),
-        domain_classes_counts= {
-            clz: temp_dom_class_count[i].item()
-            for i, clz in enumerate(DomainClass)
-        },
-        corrupted_channels_count=len(set(x.C for x in sparse_diff)),
+        value_classes_counts= value_class_count,
+        corrupted_channels_count=len(faulty_channels),
         corrupted_values_count=len(sparse_diff),
+        domain_class=domain_class,
         layout=args.layout,
         metadata=metadata
     )

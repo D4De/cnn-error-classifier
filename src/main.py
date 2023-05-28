@@ -105,7 +105,7 @@ def progress_handler(queue: Queue, work: int):
         work_count = 0
         while True:
             try:
-                message, args = queue.get(True, 10)
+                message, args = queue.get(True, 15)
                 if message == "exit":
                     break
                 elif message == "processed":

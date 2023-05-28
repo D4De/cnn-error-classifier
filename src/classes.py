@@ -7,7 +7,7 @@ from typing import Any, Dict, Iterable, List, Tuple
 from aggregators import count_by, group_by
 from analyzed_tensor import AnalyzedTensor
 from args import Args
-from domain_classifier import DomainClass
+from domain_classifier import ValueClass
 from spatial_classifier import accumulate_max, to_classes_id
 from utils import sort_dict
 
@@ -110,14 +110,14 @@ def calculate_classes_cardinalities_and_spatial(results : Iterable[AnalyzedTenso
 
 
 def calculate_value_analysis(results : Iterable[AnalyzedTensor]) -> str:
-    counts : defaultdict[DomainClass, int] = defaultdict(int)
+    counts : defaultdict[ValueClass, int] = defaultdict(int)
     corrupted_values = 0
     for result in results:
-        for dom_class, count in result.domain_classes_counts.items():
-            if dom_class == DomainClass.SAME or dom_class == DomainClass.ALMOST_SAME:
+        for dom_class, count in result.value_classes_counts.items():
+            if dom_class == ValueClass.SAME or dom_class == ValueClass.ALMOST_SAME:
                 continue
             counts[dom_class] += count
             corrupted_values += count
     counts = {clz : cnt / corrupted_values for clz, cnt in counts.items()}
-    values_txt = f'There have been {corrupted_values} faults\n[-1, 1]: {counts[DomainClass.OFF_BY_ONE]}\nOthers: {counts[DomainClass.RANDOM]}\nNan: {counts[DomainClass.NAN]}\nZeros: {counts[DomainClass.ZERO]}\nValid: 1.00000' 
+    values_txt = f'There have been {corrupted_values} faults\n[-1, 1]: {counts[ValueClass.OFF_BY_ONE]}\nOthers: {counts[ValueClass.RANDOM]}\nNan: {counts[ValueClass.NAN]}\nZeros: {counts[ValueClass.ZERO]}\nValid: 1.00000' 
     return values_txt

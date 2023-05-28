@@ -4,7 +4,7 @@ from typing import Callable, Dict, Iterable, List, Tuple, TypeVar, Union
 
 from analyzed_tensor import AnalyzedTensor
 from coordinates import coordinates_to_tuple
-from domain_classifier import DomainClass
+from domain_classifier import ValueClass
 from utils import sort_dict
 
 T = TypeVar("T")
@@ -51,7 +51,7 @@ def classes_triple_counts(results : List[AnalyzedTensor]) -> Dict[str, int]:
 def domain_classes_counts(results : List[AnalyzedTensor]) -> Dict[str, int]:
     counts = defaultdict(int)
     for result in results:
-        for dom_class, count in result.domain_classes_counts.items():
+        for dom_class, count in result.value_classes_counts.items():
             counts[dom_class.display_name()] += count
 
     return counts
@@ -82,24 +82,24 @@ def domain_classes_types_counts(results : List[AnalyzedTensor]) -> Dict[str, int
     for type in ["(RANDOM)", "(OFF_BY_ONE)", "(NAN)", "UNCATEGORIZED", "(RANDOM, OFF_BY_ONE)", "(RANDOM, SINGLE_NAN)", "(RANDOM, MULTIPLE_NAN)"]:
         type_counts[type] = 0
     for result in results:
-        dom_classes_counts = result.domain_classes_counts
-        non_zero_dom_classes = [dom_class for dom_class, count in dom_classes_counts.items() if count > 0 and dom_class != DomainClass.SAME and dom_class != DomainClass.ALMOST_SAME]
+        dom_classes_counts = result.value_classes_counts
+        non_zero_dom_classes = [dom_class for dom_class, count in dom_classes_counts.items() if count > 0 and dom_class != ValueClass.SAME and dom_class != ValueClass.ALMOST_SAME]
         if len(non_zero_dom_classes) == 1:
             the_dom_class = non_zero_dom_classes[0]
-            if the_dom_class == DomainClass.RANDOM:
+            if the_dom_class == ValueClass.RANDOM:
                 type_counts["(RANDOM)"] += 1
-            elif the_dom_class == DomainClass.OFF_BY_ONE:
+            elif the_dom_class == ValueClass.OFF_BY_ONE:
                 type_counts["(OFF_BY_ONE)"] += 1                
-            elif the_dom_class == DomainClass.NAN:
+            elif the_dom_class == ValueClass.NAN:
                 type_counts["(NAN)"] += 1
             else:
                 type_counts["UNCATEGORIZED"] += 1
         elif len(non_zero_dom_classes) == 2:
             non_zero_dom_classes_set = set(non_zero_dom_classes)
-            if DomainClass.OFF_BY_ONE in non_zero_dom_classes_set and DomainClass.RANDOM in non_zero_dom_classes_set:
+            if ValueClass.OFF_BY_ONE in non_zero_dom_classes_set and ValueClass.RANDOM in non_zero_dom_classes_set:
                 type_counts["(RANDOM, OFF_BY_ONE)"] += 1
-            elif DomainClass.NAN in non_zero_dom_classes_set and DomainClass.RANDOM in non_zero_dom_classes_set:
-                nan_count = dom_classes_counts[DomainClass.NAN]
+            elif ValueClass.NAN in non_zero_dom_classes_set and ValueClass.RANDOM in non_zero_dom_classes_set:
+                nan_count = dom_classes_counts[ValueClass.NAN]
                 if nan_count == 1:
                     type_counts["(RANDOM, SINGLE_NAN)"] += 1
                 else:

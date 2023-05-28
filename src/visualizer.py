@@ -3,7 +3,7 @@ import math
 import os
 from typing import Iterable, Tuple, Union
 
-from domain_classifier import DomainClass
+from domain_classifier import ValueClass
 
 
 import matplotlib.pyplot as plt
@@ -13,8 +13,8 @@ from coordinates import TensorLayout
 import numpy as np
 import logging as log
 
-levels = [clz.value for clz in DomainClass] + [len(DomainClass)]
-labels = [""] + [clz.display_name() for clz in DomainClass]
+levels = [clz.value for clz in ValueClass] + [len(ValueClass)]
+labels = [""] + [clz.display_name() for clz in ValueClass]
 colors = ["white", "yellow", "orange", "red", "olive", "brown", "black"]
 cmap, norm = matplotlib.colors.from_levels_and_colors(levels, colors, extend="neither")
 

@@ -178,19 +178,18 @@ SPATIAL_CLASSES = list(SpatialClass)
 
 def spatial_classification(
     sparse_diff: Iterable[Coordinates], shape: Coordinates
-) -> Tuple[SpatialClass, dict[str, any]]:
+) -> Tuple[SpatialClass, dict[str, any], List[int]]:
     corrupted_channels = list({x.C for x in sparse_diff})
-
     if len(corrupted_channels) == 1:
         for sp_class, classifier in SINGLE_CHANNEL_CLASSIFIERS_NEW.items():
             is_class, pattern_data = classifier(sparse_diff, shape, corrupted_channels)
             if is_class:
-                return sp_class, pattern_data
+                return sp_class, pattern_data, corrupted_channels
     else:
         for sp_class, classifier in MULTI_CHANNEL_CLASSIFIERS_NEW.items():
             is_class, pattern_data = classifier(sparse_diff, shape, corrupted_channels)
             if is_class:
-                return sp_class, pattern_data
+                return sp_class, pattern_data, corrupted_channels
 
 
 def create_visual_spatial_classification_folders(visualize_output_folder: str):
