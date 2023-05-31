@@ -1,15 +1,16 @@
 from collections import defaultdict
 from operator import itemgetter
-from typing import Dict, Iterable, Tuple
+from typing import Dict, Iterable, Tuple, Optional
 
 from coordinates import Coordinates, raveled_channel_index
+from spatial_classifier.spatial_class import SpatialClass
+from spatial_classifier.spatial_class_parameters import SpatialClassParameters
 
-
-def skip_4_pattern(
+def skip_2_pattern(
     sparse_diff: Iterable[Coordinates],
     shape: Coordinates,
     corr_channels: Iterable[int],
-) -> Tuple[bool, Dict[str, any]]:
+) -> Optional[SpatialClassParameters]:
     """
     Return True if a Skip4 pattern is identified
 
@@ -27,7 +28,7 @@ def skip_4_pattern(
     smallest_coordinate = min(coordinates)
     # to be a skip 4 error it should be true that (raveled_channel_index(error) === smallest_coordinate mod 4)
     # 0 is always allowed inside the skip4 pattern
-    candidate_positions = set(range(smallest_coordinate, shape.H * shape.W, 4))
+    candidate_positions = set(range(smallest_coordinate, shape.H * shape.W, 2))
     # All the errors in the tensor that have a distance multiple of 4
     good_positions = coordinates & candidate_positions
     # all the other positions
@@ -57,4 +58,4 @@ def skip_4_pattern(
             "MAX": [max_c_offset, max_idx_offset],
         }
     else:
-        return False, {}
+        return None

@@ -1,5 +1,5 @@
 from collections import OrderedDict, defaultdict
-from typing import Any, Callable, Dict, Tuple, TypeVar
+from typing import Any, Callable, Dict, Iterable, List, Tuple, TypeVar
 
 
 def int_defaultdict() -> defaultdict[Any, int]:
@@ -42,3 +42,26 @@ def sort_dict(
             [(key, value) for key, value in data.items()], key=sort_key, reverse=reverse
         )
     )
+
+T = TypeVar("T")
+S = TypeVar("S")
+
+
+
+def group_by(results : Iterable[S], key : Callable[[S],T]) -> Dict[T, List[S]]:
+    groups : defaultdict[T, List[S]] = defaultdict(list)
+
+    for result in results:
+        groups[key(result)].append(result)
+
+    return groups
+
+
+def count_by(results : Iterable[S], key : Callable[[S],T], count_funct : Callable[[S], int] = lambda x: 1) -> Dict[T, int]:
+    counts : defaultdict[T, int] = defaultdict(int)
+
+    for result in results:
+        counts[key(result)] += count_funct(result)
+
+    return counts
+

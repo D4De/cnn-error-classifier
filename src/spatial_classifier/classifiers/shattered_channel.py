@@ -1,15 +1,17 @@
-from typing import Dict, Iterable, Tuple
+from typing import Dict, Iterable, Tuple, Optional
 
 from coordinates import Coordinates, raveled_channel_index
+from spatial_classifier.spatial_class_parameters import SpatialClassParameters
+from spatial_classifier.spatial_class import SpatialClass
 
 
 def shattered_channel_pattern(
     sparse_diff: Iterable[Coordinates],
     shape: Coordinates,
     corr_channels: Iterable[int],
-) -> Tuple[bool, Dict[str, any]]:
+) -> Optional[SpatialClassParameters]:
     if len(corr_channels) < 2:
-        return False, {}
+        return None
     indexes_by_chan = {}
     for chan in corr_channels:
         indexes_by_chan[chan] = set(
@@ -24,8 +26,9 @@ def shattered_channel_pattern(
         common_indexes &= indexes_by_chan[chan]
         all_indexes |= indexes_by_chan[chan]
     if len(common_indexes) == 0:
-        return False, {}
+        return None
     zero_index = next(iter(common_indexes))
+#    channel_skips = [curr - prev for prev, curr in zip(corr_channels, next(corr_channels))]
     min_w_offset = min(idx - zero_index for idx in all_indexes)
     max_w_offset = max(idx - zero_index for idx in all_indexes)
     max_c_offset = max(corr_channels) - min_c
@@ -38,11 +41,10 @@ def shattered_channel_pattern(
         for chan in corr_channels
     )
 
-    return True, {
-        "error_pattern": error_pattern,
-        "min_w_offset": min_w_offset,
-        "max_w_offset": max_w_offset,
-        "max_c_offset": max_c_offset,
-        "feature_maps_count": feature_maps_count,
-        "MAX": [feature_maps_count, max_c_offset, min_w_offset, max_w_offset],
-    }
+    return SpatialClassParameters(SpatialClass.SHATTERED_CHANNEL, 
+        keys = {
+            "error_pattern": error_pattern
+        },
+        aggregate_values = {
+        }
+    )

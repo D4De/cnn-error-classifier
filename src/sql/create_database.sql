@@ -12,7 +12,6 @@ CREATE TABLE Experiment (
     W INT NOT NULL,
     spatial_class TEXT,
     spatial_class_params JSON,
-    spatial_pattern TEXT,
     value_classes_counts JSON,
     domain_class TEXT,
     corrupted_values_count INT,

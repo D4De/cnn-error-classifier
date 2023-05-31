@@ -1,30 +1,12 @@
 from collections import defaultdict
 from operator import itemgetter
-from typing import Callable, Dict, Iterable, List, Tuple, TypeVar, Union
+from typing import Dict, List, Tuple, TypeVar, Union
 
 from analyzed_tensor import AnalyzedTensor
 from coordinates import coordinates_to_tuple
 from domain_classifier import ValueClass
-from utils import sort_dict
+from utils import count_by, group_by, sort_dict
 
-T = TypeVar("T")
-S = TypeVar("S")
-
-def group_by(results : Iterable[S], key : Callable[[S],T]) -> Dict[T, List[S]]:
-    groups : defaultdict[T, List[S]] = defaultdict(list)
-
-    for result in results:
-        groups[key(result)].append(result)
-    
-    return groups
-
-def count_by(results : Iterable[S], key : Callable[[S],T], count_funct : Callable[[S], int] = lambda x: 1) -> Dict[T, int]:
-    counts : defaultdict[T, int] = defaultdict(int)
-    
-    for result in results:
-        counts[key(result)] += count_funct(result)
-
-    return counts
 
 def spatial_classes_counts(results : List[AnalyzedTensor]) -> Dict[str, int]:
     counts = count_by(results, key=lambda x: x.spatial_class)
@@ -39,14 +21,6 @@ def cardinalities_counts(results : List[AnalyzedTensor]) -> Dict[int, int]:
     counts = count_by(results, key=lambda x: x.corrupted_values_count)
     
     return sort_dict(counts, sort_key=itemgetter(1), reverse=True)
-
-
-def classes_triple_counts(results : List[AnalyzedTensor]) -> Dict[str, int]:
-    def triple_maker(x : AnalyzedTensor):
-        if x.corrupted_values_count == 1:
-            return "(1,-1,0)"
-        return str((x.corrupted_values_count, x.spatial_class.display_name(), x.spatial_pattern))
-    return sort_dict(count_by(results, key=triple_maker), sort_key=itemgetter(1), reverse=True)
 
 def domain_classes_counts(results : List[AnalyzedTensor]) -> Dict[str, int]:
     counts = defaultdict(int)

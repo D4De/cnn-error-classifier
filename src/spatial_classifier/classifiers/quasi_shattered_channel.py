@@ -1,16 +1,18 @@
 from collections import defaultdict
-from typing import Dict, Iterable, Tuple
+from typing import Dict, Iterable, Tuple, Optional
 
 from coordinates import Coordinates, raveled_channel_index
+from spatial_classifier.spatial_class_parameters import SpatialClassParameters
+from spatial_classifier.spatial_class import SpatialClass
 
 
 def quasi_shattered_channel_pattern(
     sparse_diff: Iterable[Coordinates],
     shape: Coordinates,
     corr_channels: Iterable[int],
-) -> Tuple[bool, Dict[str, any]]:
+) -> Optional[SpatialClassParameters]:
     if len(corr_channels) < 2:
-        return False, {}
+        return None
     indexes_by_chan = {}
     chan_by_indexes = defaultdict(set)
     for chan in corr_channels:
@@ -24,7 +26,7 @@ def quasi_shattered_channel_pattern(
             chan_by_indexes[idx].add(chan)
     zero_index, common_channels = max(chan_by_indexes.items(), key=lambda s: len(s[1]))
     if len(common_channels) < 2:
-        return False, {}
+        return None
     min_c = min(corr_channels)
     min_w_offset = min(idx - zero_index for idx in chan_by_indexes.keys())
     max_w_offset = max(idx - zero_index for idx in chan_by_indexes.keys())
@@ -37,12 +39,10 @@ def quasi_shattered_channel_pattern(
         )
         for chan in corr_channels
     )
-
-    return True, {
-        "error_pattern": error_pattern,
-        "min_w_offset": min_w_offset,
-        "max_w_offset": max_w_offset,
-        "max_c_offset": max_c_offset,
-        "feature_maps_count": feature_maps_count,
-        "MAX": [feature_maps_count, max_c_offset, min_w_offset, max_w_offset],
-    }
+    return SpatialClassParameters(SpatialClass.QUASI_SHATTERED_CHANNEL, 
+        keys = {
+            "error_pattern": error_pattern
+        },
+        aggregate_values = {
+        }
+    )

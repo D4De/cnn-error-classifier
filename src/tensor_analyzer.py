@@ -6,7 +6,7 @@ from args import Args
 from coordinates import TensorLayout, map_to_coordinates, numpy_coords_to_python_coord
 from domain_classifier import ValueClass, domain_classification, value_classification
 from analyzed_tensor import AnalyzedTensor
-from spatial_classifier import spatial_classification
+from spatial_classifier.spatial_classifier import spatial_classification
 from domain_classifier import value_classification_vect
 import logging as log
 import numpy as np
@@ -131,6 +131,7 @@ def analyze_tensor(
             suptitile=f'{metadata.get("batch_name") or ""} {metadata.get("igid") or ""} {metadata.get("bfm") or ""} {golden_shape.C}x{golden_shape.H}x{golden_shape.W}',
             invalidate=True,
         )
+        
 
     # Per tensor report generator
     return spatial_class.display_name(), AnalyzedTensor(
@@ -141,7 +142,6 @@ def analyze_tensor(
         shape=faulty_shape,
         spatial_class=spatial_class,
         spatial_class_params=pattern_params,
-        spatial_pattern=pattern_params.get("error_pattern"),
         value_classes_counts= value_class_count,
         corrupted_channels_count=len(faulty_channels),
         corrupted_values_count=len(sparse_diff),
