@@ -3,8 +3,10 @@ from operator import itemgetter
 from typing import Dict, Iterable, Tuple, Optional
 
 from coordinates import Coordinates, raveled_channel_index
+from spatial_classifier.aggregators import MaxAggregator, MinAggregator
 from spatial_classifier.spatial_class_parameters import SpatialClassParameters
 from spatial_classifier.spatial_class import SpatialClass
+from utils import quantize_percentage
 
 
 def single_channel_random_pattern(
@@ -16,20 +18,21 @@ def single_channel_random_pattern(
     if len(corr_channels) != 1:
         return None
 
-    indexes_by_channel = defaultdict(list)
-    min_c = min(coord.C for coord in sparse_diff)
-    min_index = min(raveled_channel_index(shape, coord) for coord in sparse_diff)
-    for coord in sparse_diff:
-        indexes_by_channel[coord.C - min_c].append(
-            raveled_channel_index(shape, coord) - min_index
-        )
-        error_pattern = tuple(
-            (chan, tuple(idx for idx in sorted(indexes)))
-            for chan, indexes in sorted(indexes_by_channel.items(), key=itemgetter(0))
-        )
+    error_cardinality = len(sparse_diff)
+    channel_corruption_pct = quantize_percentage(error_cardinality / (shape.H * shape.W))
+
+    raveled_value_idxs = sorted([raveled_channel_index(shape, coord) for coord in sparse_diff])
+    value_skips = [curr - prev for prev, curr in zip(raveled_value_idxs, raveled_value_idxs[1:])]  
+
+
     return SpatialClassParameters(SpatialClass.SINGLE_CHANNEL_RANDOM, 
                 keys = {
-                    "error_pattern": error_pattern
+                    "channel_corruption_pct": channel_corruption_pct
                 },
-                aggregate_values = {}
+                stats = {
+                    "max_cardinality": (error_cardinality, MaxAggregator()),
+                    "min_skip": (min(value_skips), MinAggregator()),
+                    "max_skip": (max(value_skips), MaxAggregator()),
+
+                }
             )

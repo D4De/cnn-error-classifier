@@ -11,7 +11,7 @@ def single_pattern(
     corr_channels: Iterable[int],
 ) -> Optional[SpatialClassParameters]:
     if len(sparse_diff) == 1:
-        return SpatialClassParameters(SpatialClass.SINGLE, keys={}, aggregate_values={})
+        return SpatialClassParameters(SpatialClass.SINGLE, keys={}, stats={})
     else:
         return None
 

@@ -4,6 +4,7 @@ from typing import Iterable, Optional
 from coordinates import Coordinates, identify_block_length, raveled_tensor_index
 from spatial_classifier.spatial_class_parameters import SpatialClassParameters
 from spatial_classifier.spatial_class import SpatialClass
+from utils import quantize_percentage
 
 
 def single_block_pattern(
@@ -17,10 +18,10 @@ def single_block_pattern(
     if result is None:
         return None
     block_length, aligment_offset, block_id = result
-    block_corruption_pct = max(math.ceil(len(indexes) / (block_length * 20)) * 5, 100)
+    block_corruption_pct = quantize_percentage(len(indexes) / (block_length))
     return SpatialClassParameters(SpatialClass.SINGLE_BLOCK, 
         keys = {
             "block_length": block_length,
             "block_corruption_pct": block_corruption_pct
         }, 
-        aggregate_values = {})
+        stats = {})

@@ -1,11 +1,10 @@
-from collections import defaultdict
-import math
-from operator import itemgetter
-from typing import Dict, Iterable, Tuple, Optional
+from typing import Iterable, Optional
 
 from coordinates import Coordinates, raveled_channel_index
+from spatial_classifier.aggregators import MaxAggregator, MinAggregator
 from spatial_classifier.spatial_class_parameters import SpatialClassParameters
 from spatial_classifier.spatial_class import SpatialClass
+from utils import quantize_percentage
 
 
 def skip_4_pattern(
@@ -38,25 +37,24 @@ def skip_4_pattern(
 
     if len(good_positions) >= 2 and len(wrong_positions) <= 1:
         # Generate the error_pattern
-        min_c = min(coord.C for coord in sparse_diff)
-        max_c_offset = max(coord.C for coord in sparse_diff) - min_c
-
-        max_idx_offset = max(coordinates) - smallest_coordinate
+        affected_channel_count = len(corr_channels)  
+        affected_channels_pct = quantize_percentage(affected_channel_count / shape.C)
 
         channel_skips = [curr - prev for prev, curr in zip(corr_channels, corr_channels[1:])]  
-        slots_corruption_pct = max(math.ceil(len(sparse_diff) / (len(good_positions) * len(corr_channels) * 20)) * 5, 100)
+        slots_corruption_pct = quantize_percentage(len(sparse_diff) / (len(good_positions)))
 
         return SpatialClassParameters(SpatialClass.SKIP_4, 
             keys = {
                 "skip_amount": 4,
-                "corrupted_channels": len(corr_channels),
-                "min_channel_skip": min(channel_skips, default=1),
-                "max_channel_skip": max(channel_skips, default=1),
-                "value_offset": max_idx_offset,
-                "corruption_pct": slots_corruption_pct,
-                "channel_offset": max_c_offset
+                "affected_channels_pct": affected_channels_pct,
+                "unique_channel_indexes": len(good_positions),
+                "indexes_corruption_pct": slots_corruption_pct,
             },
-            aggregate_values = {}
+            stats = {
+                "max_corrupted_channels": (affected_channel_count, MaxAggregator()),
+                "min_channel_skip": (min(channel_skips, default=1), MinAggregator()),
+                "max_channel_skip": (max(channel_skips, default=1), MaxAggregator()),
+            }
         )
     else:
         return None

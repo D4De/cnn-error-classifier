@@ -3,8 +3,10 @@ from operator import itemgetter
 from typing import Iterable, Optional
 
 from coordinates import Coordinates, raveled_channel_index
+from spatial_classifier.aggregators import MaxAggregator, MinAggregator
 from spatial_classifier.spatial_class_parameters import SpatialClassParameters
 from spatial_classifier.spatial_class import SpatialClass
+from utils import quantize_percentage
 
 
 def multiple_channels_uncategorized_pattern(
@@ -12,17 +14,31 @@ def multiple_channels_uncategorized_pattern(
     shape: Coordinates,
     corr_channels: Iterable[int],
 ) -> Optional[SpatialClassParameters]:
-    indexes_by_channel = defaultdict(list)
-    min_c = min(coord.C for coord in sparse_diff)
-    min_index = min(raveled_channel_index(shape, coord) for coord in sparse_diff)
+
+    if(len(corr_channels) < 2):
+        return None
+
+    errors_per_channel = defaultdict(int)
+
     for coord in sparse_diff:
-        indexes_by_channel[coord.C - min_c].append(
-            raveled_channel_index(shape, coord) - min_index
-        )
-        error_pattern = tuple(
-            (chan, tuple(idx for idx in sorted(indexes)))
-            for chan, indexes in sorted(indexes_by_channel.items(), key=itemgetter(0))
-        )
+        errors_per_channel[coord.C] += 1
+
+    affected_channel_count = len(corr_channels)
+    error_cardinality = len(sparse_diff)
+    channel_skips = [curr - prev for prev, curr in zip(corr_channels, corr_channels[1:])]      
+    affected_channels_pct = quantize_percentage(affected_channel_count / shape.C)
+    avg_channel_corruption_pct = quantize_percentage(error_cardinality / (affected_channel_count * shape.W * shape.H))
+
+
+
     return SpatialClassParameters(SpatialClass.MULTIPLE_CHANNELS_UNCATEGORIZED, keys = {
-        "error_pattern": error_pattern
-    }, aggregate_values = {})
+        "affected_channels_pct": affected_channels_pct,
+        "avg_channel_corruption_pct": avg_channel_corruption_pct
+    }, 
+    stats = {
+        "max_corrupted_channels": (affected_channel_count, MaxAggregator()),
+        "min_errors_per_channel": (min(errors_per_channel.values()), MinAggregator()),
+        "max_errors_per_channel": (max(errors_per_channel.values()), MaxAggregator()),
+        "min_channel_skip": (min(channel_skips, default=1), MinAggregator()),
+        "max_channel_skip": (max(channel_skips, default=1), MaxAggregator())
+    }) 

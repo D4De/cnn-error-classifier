@@ -1,5 +1,6 @@
 from typing import Iterable, Optional
-from utils import count_by
+from spatial_classifier.aggregators import MaxAggregator, MinAggregator
+from utils import count_by, quantize_percentage
 
 from coordinates import Coordinates
 
@@ -36,20 +37,26 @@ def full_channels_pattern(
 
 
     channel_skips = [curr - prev for prev, curr in zip(corr_channels, corr_channels[1:])]    
-    pct_corrupt_keys_dict = count_by(chan_pcts.values(), key=lambda x: f'{x}%_corrupted_channels')
+
+    affected_channel_count = len(corr_channels)
+
+    avg_chan_corruption = len(sparse_diff) / (affected_channel_count * chan_size)
+    avg_chan_corruption_pct = quantize_percentage(avg_chan_corruption)
+    affected_channels_pct = quantize_percentage(affected_channel_count / shape.C)
     
     # Distance from first to last corrupted channel
     channel_offset = max(corr_channels) - min(corr_channels)
         
     return SpatialClassParameters(SpatialClass.FULL_CHANNELS, 
         keys = {
-            "corrupted_channels": len(corr_channels),
-            "min_channel_skip": min(channel_skips, default=1),
-            "max_channel_skip": max(channel_skips, default=1),
-            "channel_offset": channel_offset,
-            **pct_corrupt_keys_dict
+            "avg_channel_corruption_pct": avg_chan_corruption_pct,
+            "affected_channels_pct": affected_channels_pct
         },
-        aggregate_values = {}
+        stats = {
+            "max_corrupted_channels": (affected_channel_count, MaxAggregator()),
+            "min_channel_skip": (min(channel_skips, default=1), MinAggregator()),
+            "max_channel_skip": (max(channel_skips, default=1), MaxAggregator()),
+        }
     )
     
 

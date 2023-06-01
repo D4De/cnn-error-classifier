@@ -2,8 +2,10 @@ from collections import defaultdict
 from typing import Iterable, Optional
 
 from coordinates import Coordinates
+from spatial_classifier.aggregators import MaxAggregator, MinAggregator
 from spatial_classifier.spatial_class_parameters import SpatialClassParameters
 from spatial_classifier.spatial_class import SpatialClass
+from utils import quantize_percentage
 
 
 def rectangles_pattern(
@@ -40,18 +42,21 @@ def rectangles_pattern(
                 if missing > MAX_MISSING:
                     return None
     
-    channel_skips = [curr - prev for prev, curr in zip(corr_channels, corr_channels[1:])]     
-    channel_offset = max(corr_channels) - min(corr_channels)
+    affected_channel_count = len(corr_channels)
+    channel_skips = [curr - prev for prev, curr in zip(corr_channels, corr_channels[1:])]      
+    affected_channels_pct = quantize_percentage(affected_channel_count / shape.C)
 
     return SpatialClassParameters(
         SpatialClass.RECTANGLES,
         keys = {
-            "corrupted_channels": len(corr_channels),
+            "affected_channels_pct": affected_channels_pct,
             "rectangle_width": max_w - min_w,
             "rectangle_heigth": max_h - min_h,
-            "min_channel_skip": min(channel_skips, default=1),
-            "max_channel_skip": max(channel_skips, default=1),
-            "channel_offset": channel_offset
+
         },
-        aggregate_values= {}
+        stats= {
+            "max_corrupted_channels": (affected_channel_count, MaxAggregator()),
+            "min_channel_skip": (min(channel_skips, default=1), MinAggregator()),
+            "max_channel_skip": (max(channel_skips, default=1), MaxAggregator()),
+        }
     )

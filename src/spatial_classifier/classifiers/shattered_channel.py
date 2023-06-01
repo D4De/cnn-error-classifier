@@ -1,8 +1,10 @@
 from typing import Dict, Iterable, Tuple, Optional
 
 from coordinates import Coordinates, raveled_channel_index
+from spatial_classifier.aggregators import MaxAggregator, MinAggregator
 from spatial_classifier.spatial_class_parameters import SpatialClassParameters
 from spatial_classifier.spatial_class import SpatialClass
+from utils import quantize_percentage
 
 
 def shattered_channel_pattern(
@@ -27,24 +29,32 @@ def shattered_channel_pattern(
         all_indexes |= indexes_by_chan[chan]
     if len(common_indexes) == 0:
         return None
-    zero_index = next(iter(common_indexes))
-#    channel_skips = [curr - prev for prev, curr in zip(corr_channels, next(corr_channels))]
-    min_w_offset = min(idx - zero_index for idx in all_indexes)
-    max_w_offset = max(idx - zero_index for idx in all_indexes)
-    max_c_offset = max(corr_channels) - min_c
-    feature_maps_count = len(corr_channels)
-    error_pattern = tuple(
-        (
-            chan - min_c,
-            tuple(error_idx - zero_index for error_idx in indexes_by_chan[chan]),
-        )
-        for chan in corr_channels
-    )
 
-    return SpatialClassParameters(SpatialClass.SHATTERED_CHANNEL, 
-        keys = {
-            "error_pattern": error_pattern
-        },
-        aggregate_values = {
-        }
-    )
+    span_width_sum = 0
+    min_span = shape.H * shape.W + 1
+    max_span = -1
+
+    for indexes in indexes_by_chan.values():
+        min_idx = min(indexes)
+        max_idx = max(indexes)
+        span_width = max_idx - min_idx
+        span_width_sum += span_width
+        min_span = min(min_span, span_width)
+        max_span = max(max_span, span_width)
+
+    avg_span_corruption_pct = quantize_percentage(len(sparse_diff) / span_width_sum)
+    affected_channel_count = len(corr_channels)
+    channel_skips = [curr - prev for prev, curr in zip(corr_channels, corr_channels[1:])]      
+    affected_channels_pct = quantize_percentage(affected_channel_count / shape.C)
+
+    
+    return SpatialClassParameters(SpatialClass.SHATTERED_CHANNEL, keys = {
+        "affected_channels_pct": affected_channels_pct,
+        "avg_span_corruption_pct": avg_span_corruption_pct,
+    }, stats = {
+        "max_corrupted_channels": (affected_channel_count, MaxAggregator()),
+        "min_channel_skip": (min(channel_skips, default=1), MinAggregator()),
+        "max_channel_skip": (max(channel_skips, default=1), MaxAggregator()),
+        "min_span_width": (min_span, MinAggregator()),
+        "max_span_width": (max_span, MaxAggregator())
+    }) 

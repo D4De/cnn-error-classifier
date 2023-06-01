@@ -9,7 +9,7 @@ SPATIAL_CLASSES = list(SpatialClass)
 class SpatialClassParameters:
     spatial_class : SpatialClass
     keys : Dict[str, Any]
-    aggregate_values : Dict[str, Tuple[Any, Callable]]
+    stats : Dict[str, Tuple[Any, Callable]]
 
 
     def to_json(self) -> str:
@@ -20,7 +20,7 @@ class SpatialClassParameters:
                 k : {
                     "value": v[0],
                     "aggregator": v[1].name
-                } for k, v in self.aggregate_values.items()
+                } for k, v in self.stats.items()
             }
         }
         return json.dumps(json_dict)

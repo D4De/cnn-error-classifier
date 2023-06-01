@@ -1,4 +1,5 @@
 from collections import OrderedDict, defaultdict
+import math
 from typing import Any, Callable, Dict, Iterable, List, Tuple, TypeVar
 
 
@@ -65,3 +66,8 @@ def count_by(results : Iterable[S], key : Callable[[S],T], count_funct : Callabl
 
     return counts
 
+def quantize_percentage(proportion : float, quantization_levels : int = 20) -> Tuple[float, float]:
+    step = 100 / quantization_levels
+    top_value = float(min(math.ceil(proportion * quantization_levels) * step, 100))
+    bot_value = float(max(0, top_value - step))
+    return (bot_value, top_value)

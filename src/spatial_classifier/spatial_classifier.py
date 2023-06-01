@@ -9,7 +9,7 @@ from spatial_classifier.classifiers.bullet_wake import bullet_wake_pattern
 from spatial_classifier.classifiers.full_channels import full_channels_pattern
 from spatial_classifier.classifiers.multi_channel_multi_block import multi_channel_multi_block_pattern
 from spatial_classifier.classifiers.quasi_shattered_channel import quasi_shattered_channel_pattern
-from spatial_classifier.classifiers.multi_channel_rectangles import rectangles_pattern
+from spatial_classifier.classifiers.rectangles import rectangles_pattern
 from spatial_classifier.classifiers.multiple_channels_uncategorized import multiple_channels_uncategorized_pattern
 from spatial_classifier.classifiers.single_channel_random import single_channel_random_pattern
 from spatial_classifier.classifiers.same_column import same_column_pattern
@@ -61,7 +61,7 @@ MULTI_CHANNEL_CLASSIFIERS_NEW = OrderedDict(
         (SpatialClass.FULL_CHANNELS, full_channels_pattern),
         (SpatialClass.RECTANGLES, rectangles_pattern),
         (SpatialClass.SHATTERED_CHANNEL, shattered_channel_pattern),
-        (SpatialClass.QUASI_SHATTERED_CHANNEL, quasi_shattered_channel_pattern),
+#        (SpatialClass.QUASI_SHATTERED_CHANNEL, quasi_shattered_channel_pattern),
         (SpatialClass.MULTIPLE_CHANNELS_UNCATEGORIZED, multiple_channels_uncategorized_pattern),
     ]
 )

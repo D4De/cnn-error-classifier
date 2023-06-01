@@ -4,6 +4,7 @@ from coordinates import Coordinates, identify_block_length, raveled_channel_inde
 from spatial_classifier.aggregators import MaxAggregator, MinAggregator
 from spatial_classifier.spatial_class import SpatialClass
 from spatial_classifier.spatial_class_parameters import SpatialClassParameters
+from utils import quantize_percentage
 
 def multi_channel_multi_block_pattern(
     sparse_diff: Iterable[Coordinates],
@@ -64,21 +65,21 @@ def multi_channel_multi_block_pattern(
     if found_mismatch:
         return None
 
-
+    affected_channel_count = len(corr_channels)
     channel_skips = [curr - prev for prev, curr in zip(corr_channels, corr_channels[1:])]      
-    channel_offset = max(corr_channels) - min(corr_channels)
+    affected_channels_pct = quantize_percentage(affected_channel_count / shape.C)
+    avg_block_corruption_pct = quantize_percentage(len(sparse_diff) / (max_block_length * affected_channel_count))
 
     return SpatialClassParameters(
         SpatialClass.MULTI_CHANNEL_BLOCK,
         keys = {
-            "corrupted_channels": len(corr_channels),
+            "affected_channels_pct": affected_channels_pct,
             "block_size": max_block_length,
-            "min_channel_skip": min(channel_skips),
-            "max_channel_skip": max(channel_skips),
-            "channel_offset": channel_offset
+            "avg_block_corruption_pct": avg_block_corruption_pct
         },
-        aggregate_values = {
-            "min_channel_offset": (channel_offset, MinAggregator()),
-            "max_channel_offset": (channel_offset ,MaxAggregator())
+        stats = {
+            "max_corrupted_channels": (affected_channel_count, MaxAggregator()),
+            "min_channel_skip": (min(channel_skips, default=1), MinAggregator()),
+            "max_channel_skip": (max(channel_skips, default=1), MaxAggregator())
         }
     )

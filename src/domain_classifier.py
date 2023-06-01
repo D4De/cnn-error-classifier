@@ -99,5 +99,7 @@ def domain_classification(value_classes_counts : Dict[ValueClass, int]) -> Domai
                 return DomainClass.RANDOM_SINGLE_NAN
             else:
                 return DomainClass.RANDOM_MULTIPLE_NAN
+        else:
+            return DomainClass.UNCATEGORIZED
     else:
         return DomainClass.UNCATEGORIZED

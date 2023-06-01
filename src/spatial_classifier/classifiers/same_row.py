@@ -1,8 +1,10 @@
 from typing import Dict, Iterable, Tuple, Optional
 
 from coordinates import Coordinates
+from spatial_classifier.aggregators import MaxAggregator, MinAggregator
 from spatial_classifier.spatial_class_parameters import SpatialClassParameters
 from spatial_classifier.spatial_class import SpatialClass
+from utils import quantize_percentage
 
 def same_row_pattern(
     sparse_diff: Iterable[Coordinates],
@@ -25,16 +27,18 @@ def same_row_pattern(
             return None
     all_ws = [coord.W for coord in sparse_diff]
     w_offset = max(all_ws) - min(all_ws)
-
+    
+    row_corruption_pct = quantize_percentage(len(sparse_diff) / w_offset)
     all_ws = [coord.W for coord in sparse_diff]
-    w_skips = [curr - prev for prev, curr in zip(all_ws, next(all_ws))]    
-    return SpatialClassParameters(SpatialClass.SAME_COLUMN, 
+    w_skips = [curr - prev for prev, curr in zip(all_ws, all_ws[1:])]    
+    return SpatialClassParameters(SpatialClass.SAME_ROW, 
         keys = {
-            "cardinality": len(sparse_diff),
-            "value_offset": w_offset,
-            "min_value_skip": min(w_skips),
-            "max_value_skip": max(w_skips),
+            "row_corruption_pct": row_corruption_pct,
         },
-        aggregate_values = {}
+        stats = {
+            "max_cardinality": (len(sparse_diff), MaxAggregator()),
+            "min_value_skip": (min(w_skips), MinAggregator()),
+            "max_value_skip": (max(w_skips), MaxAggregator())
+        }
     )
 

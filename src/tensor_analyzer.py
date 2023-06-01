@@ -7,10 +7,8 @@ from coordinates import TensorLayout, map_to_coordinates, numpy_coords_to_python
 from domain_classifier import ValueClass, domain_classification, value_classification
 from analyzed_tensor import AnalyzedTensor
 from spatial_classifier.spatial_classifier import spatial_classification
-from domain_classifier import value_classification_vect
 import logging as log
 import numpy as np
-import time
 
 from visualizer import visualize
 
