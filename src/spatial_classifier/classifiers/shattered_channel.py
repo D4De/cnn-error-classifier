@@ -31,7 +31,6 @@ def shattered_channel_pattern(
         return None
 
     span_width_sum = 0
-    min_span = shape.H * shape.W + 1
     max_span = -1
 
     for indexes in indexes_by_chan.values():
@@ -39,7 +38,6 @@ def shattered_channel_pattern(
         max_idx = max(indexes)
         span_width = max_idx - min_idx
         span_width_sum += span_width
-        min_span = min(min_span, span_width)
         max_span = max(max_span, span_width)
 
     avg_span_corruption_pct = quantize_percentage(len(sparse_diff) / span_width_sum)
@@ -49,12 +47,12 @@ def shattered_channel_pattern(
 
     
     return SpatialClassParameters(SpatialClass.SHATTERED_CHANNEL, keys = {
-        "affected_channels_pct": affected_channels_pct,
         "avg_span_corruption_pct": avg_span_corruption_pct,
+        "affected_channels_pct": affected_channels_pct,
     }, stats = {
         "max_corrupted_channels": (affected_channel_count, MaxAggregator()),
         "min_channel_skip": (min(channel_skips, default=1), MinAggregator()),
         "max_channel_skip": (max(channel_skips, default=1), MaxAggregator()),
-        "min_span_width": (min_span, MinAggregator()),
+        "min_span_width": (max_span, MinAggregator()),
         "max_span_width": (max_span, MaxAggregator())
     }) 

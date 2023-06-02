@@ -49,10 +49,9 @@ def rectangles_pattern(
     return SpatialClassParameters(
         SpatialClass.RECTANGLES,
         keys = {
-            "affected_channels_pct": affected_channels_pct,
             "rectangle_width": max_w - min_w,
             "rectangle_heigth": max_h - min_h,
-
+            "affected_channels_pct": affected_channels_pct
         },
         stats= {
             "max_corrupted_channels": (affected_channel_count, MaxAggregator()),

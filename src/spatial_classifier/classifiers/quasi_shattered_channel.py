@@ -48,8 +48,8 @@ def quasi_shattered_channel_pattern(
 
     
     return SpatialClassParameters(SpatialClass.QUASI_SHATTERED_CHANNEL, keys = {
-        "affected_channels_pct": affected_channels_pct,
         "avg_span_corruption_pct": avg_span_corruption_pct,
+        "affected_channels_pct": affected_channels_pct
     }, stats = {
         "max_corrupted_channels": (affected_channel_count, MaxAggregator()),
         "min_channel_skip": (min(channel_skips, default=1), MinAggregator()),

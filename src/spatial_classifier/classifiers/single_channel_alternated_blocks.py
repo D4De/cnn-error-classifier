@@ -18,8 +18,8 @@ def single_channel_alternated_blocks_pattern(
     align = 32
     chan_size = shape.W * shape.H
 
-    min_block_skip = 0
-    max_block_skip = chan_size // align + 2
+    min_block_skip = chan_size // align + 2
+    max_block_skip = 0
 
     blocks_affected = sorted(set(idx // align for idx in error_indexes))
     if len(blocks_affected) < 2:
@@ -30,7 +30,7 @@ def single_channel_alternated_blocks_pattern(
         if block_skip < 2:
             return None
         min_block_skip = min(min_block_skip, block_skip)
-        max_block_skip = max(max_block_skip, max_block_skip)
+        max_block_skip = max(max_block_skip, block_skip)
     # Check that every block has enough elements
     if chan_size % align != 0:
         # Last block is exempt from the check, if it is a remainder block

@@ -32,8 +32,8 @@ def multiple_channels_uncategorized_pattern(
 
 
     return SpatialClassParameters(SpatialClass.MULTIPLE_CHANNELS_UNCATEGORIZED, keys = {
-        "affected_channels_pct": affected_channels_pct,
-        "avg_channel_corruption_pct": avg_channel_corruption_pct
+        "avg_channel_corruption_pct": avg_channel_corruption_pct,
+        "affected_channels_pct": affected_channels_pct
     }, 
     stats = {
         "max_corrupted_channels": (affected_channel_count, MaxAggregator()),

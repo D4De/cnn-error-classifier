@@ -73,9 +73,9 @@ def multi_channel_multi_block_pattern(
     return SpatialClassParameters(
         SpatialClass.MULTI_CHANNEL_BLOCK,
         keys = {
-            "affected_channels_pct": affected_channels_pct,
             "block_size": max_block_length,
-            "avg_block_corruption_pct": avg_block_corruption_pct
+            "avg_block_corruption_pct": avg_block_corruption_pct,
+            "affected_channels_pct": affected_channels_pct,
         },
         stats = {
             "max_corrupted_channels": (affected_channel_count, MaxAggregator()),

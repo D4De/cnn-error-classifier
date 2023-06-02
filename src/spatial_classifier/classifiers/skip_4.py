@@ -46,9 +46,9 @@ def skip_4_pattern(
         return SpatialClassParameters(SpatialClass.SKIP_4, 
             keys = {
                 "skip_amount": 4,
-                "affected_channels_pct": affected_channels_pct,
                 "unique_channel_indexes": len(good_positions),
                 "indexes_corruption_pct": slots_corruption_pct,
+                "affected_channels_pct": affected_channels_pct,
             },
             stats = {
                 "max_corrupted_channels": (affected_channel_count, MaxAggregator()),

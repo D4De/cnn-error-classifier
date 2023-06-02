@@ -22,8 +22,9 @@ def generate_classes_models(results : Iterable[AnalyzedTensor], args: Args):
         classes_model[sp_class.display_name()] = {
             "count": len(tensors),
             "frequency": len(tensors) / len(results),
-            "domain_classes": generate_domain_class_freq(tensors),
             "categories_count": categories_count,
+            "domain_classes": generate_domain_class_freq(tensors),
+
             "parameters": parameter_list
         }
 

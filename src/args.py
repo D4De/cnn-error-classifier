@@ -94,6 +94,15 @@ class Args:
     Store experiment data in a sqlite database file
     """
 
+    classes_category_absolute_cutoff : int
+    """
+    
+    """
+
+    classes_category_relative_cutoff : float
+    """
+    """
+
     @classmethod
     def from_argparse(cls, args: Namespace) -> Args:
         """
@@ -119,6 +128,8 @@ class Args:
             reports_path=os.path.join(args.output_dir, "reports"),
             parallel=args.parallel,
             database=args.database,
+            classes_category_absolute_cutoff=5,
+            classes_category_relative_cutoff=0.01,            
         )
 
 
