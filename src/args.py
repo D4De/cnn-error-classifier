@@ -129,7 +129,7 @@ class Args:
             parallel=args.parallel,
             database=args.database,
             classes_category_absolute_cutoff=5,
-            classes_category_relative_cutoff=0.01,            
+            classes_category_relative_cutoff=0.01,             
         )
 
 

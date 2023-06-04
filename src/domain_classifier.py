@@ -1,22 +1,25 @@
 import math
 import struct
 from enum import Enum
-from typing import Dict
+from typing import Dict, Tuple
 
 import numpy as np
+
+from utils import quantize_percentage
 
 
 class ValueClass(Enum):
     SAME = 0
     ALMOST_SAME = 1
-    OFF_BY_ONE = 2
+    IN_RANGE = 2
     ZERO = 3
     FLIP = 4
-    RANDOM = 5
+    OUT_OF_RANGE = 5
     NAN = 6
 
     def display_name(self) -> str:
         return self.name.lower()
+
 
 class DomainClass(Enum):
     ONLY_RANDOM = 0
@@ -39,6 +42,8 @@ def binary(num):
 def value_classification(
     golden_value: float,
     faulty_value: float,
+    golden_range_min : float,
+    golden_range_max : float,
     eps: float = 10e-3,
     almost_same: bool = False,
 ) -> ValueClass:
@@ -56,50 +61,25 @@ def value_classification(
     ]
     if len(bit_diff) == 1:
         return ValueClass.FLIP
-    elif abs(golden_value - faulty_value) <= 1:
-        return ValueClass.OFF_BY_ONE
+    elif golden_range_min <= faulty_value <= golden_range_max:
+        return ValueClass.IN_RANGE
     else:
-        return ValueClass.RANDOM
+        return ValueClass.OUT_OF_RANGE
 
 
-def value_classification_int(
-    golden_value: float,
-    faulty_value: float,
-    eps: float = 10e-3,
-    almost_same: bool = False,
-) -> int:
-    return value_classification(golden_value, faulty_value, eps, almost_same).value
-
-
-value_classification_vect = np.vectorize(
-    value_classification_int, excluded=["eps", "almost_same"]
-)
-
-def domain_classification(value_classes_counts : Dict[ValueClass, int]) -> DomainClass:
+def domain_classification(value_classes_counts : Dict[ValueClass, int]) -> Dict[str, Tuple[float, float]]:
     present_value_classes = [dom_class for dom_class, count in value_classes_counts.items() if count > 0 and dom_class != ValueClass.SAME and dom_class != ValueClass.ALMOST_SAME]
+    val_classes_freq_sum = sum(value_classes_counts[val_class] for val_class in present_value_classes)
     if len(present_value_classes) == 1:
         only_value_class = present_value_classes[0]
-        if only_value_class == ValueClass.RANDOM:
-            return DomainClass.ONLY_RANDOM
-        elif only_value_class == ValueClass.OFF_BY_ONE:
-            return DomainClass.ONLY_OFF_BY_ONE              
-        elif only_value_class == ValueClass.NAN:
-            return DomainClass.ONLY_NAN
-        elif only_value_class == ValueClass.ZERO:
-            return DomainClass.ONLY_ZERO
-        else:
-            return DomainClass.UNCATEGORIZED
+        return {only_value_class.display_name() : (100.0, 100.0)}
     elif len(present_value_classes) == 2:
-        non_zero_dom_classes_set = set(present_value_classes)
-        if ValueClass.OFF_BY_ONE in non_zero_dom_classes_set and ValueClass.RANDOM in non_zero_dom_classes_set:
-            return DomainClass.RANDOM_OFF_BY_ONE
-        elif ValueClass.NAN in non_zero_dom_classes_set and ValueClass.RANDOM in non_zero_dom_classes_set:
-            nan_count = value_classes_counts[ValueClass.NAN]
-            if nan_count == 1:
-                return DomainClass.RANDOM_SINGLE_NAN
-            else:
-                return DomainClass.RANDOM_MULTIPLE_NAN
-        else:
-            return DomainClass.UNCATEGORIZED
+        class_1, class_2 = present_value_classes
+        return {
+            class_1.display_name(): quantize_percentage(value_classes_counts[class_1] / val_classes_freq_sum, quantization_levels=7),
+            class_2.display_name(): quantize_percentage(value_classes_counts[class_2] / val_classes_freq_sum, quantization_levels=7)
+        }
     else:
-        return DomainClass.UNCATEGORIZED
+        return {
+            "random": (100.0, 100.0)
+        }

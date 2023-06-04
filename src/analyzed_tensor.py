@@ -3,7 +3,7 @@
 
 from dataclasses import dataclass
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from coordinates import Coordinates, TensorLayout
 from domain_classifier import DomainClass, ValueClass
@@ -21,7 +21,9 @@ class AnalyzedTensor:
     spatial_class : SpatialClass    
     spatial_class_params : SpatialClassParameters
     value_classes_counts : Dict[ValueClass, int]
-    domain_class : DomainClass
+    golden_range_min : float
+    golden_range_max : float
+    domain_class : Dict[str, Tuple[float, float]]
     corrupted_values_count : int
     corrupted_channels_count : int
     layout : TensorLayout
@@ -34,7 +36,6 @@ class AnalyzedTensor:
             dom.display_name() : count for dom, count in self.value_classes_counts.items()
         }
 
-
         return {
             "batch_name": self.batch,
             "sub_batch_name": self.sub_batch,
@@ -46,10 +47,12 @@ class AnalyzedTensor:
             "H": self.shape.H,
             "C": self.shape.C,
             "W": self.shape.W,
+            "golden_range_min": self.golden_range_min,
+            "golden_range_max" : self.golden_range_max,
             "spatial_class": self.spatial_class.display_name(),
             "spatial_class_params": self.spatial_class_params.to_json(),
             "value_classes_counts": json.dumps(domain_class_count_str),
-            "domain_class": self.domain_class.display_name(),
+            "domain_class": json.dumps(self.domain_class),
             "corrupted_values_count": self.corrupted_values_count,
             "corrupted_channels_count": self.corrupted_channels_count,
             "layout": self.layout.name,

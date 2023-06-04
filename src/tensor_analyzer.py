@@ -16,6 +16,8 @@ from visualizer import visualize
 def analyze_tensor(
     file_path: str,
     golden: np.ndarray,
+    golden_range_min: float,
+    golden_range_max: float,
     args: Args,
     metadata: dict = {},
 ) -> Tuple[str, Union[AnalyzedTensor, None]]:
@@ -95,7 +97,7 @@ def analyze_tensor(
     tensor_diff = np.zeros(faulty_native_shape, dtype=np.int8)
 
     for coord in sparse_diff_native_coords:
-        val_class = value_classification(golden[coord[0], coord[1], coord[2], coord[3]], faulty[coord[0], coord[1], coord[2], coord[3]], args.epsilon, args.almost_same)
+        val_class = value_classification(golden[coord[0], coord[1], coord[2], coord[3]], faulty[coord[0], coord[1], coord[2], coord[3]], golden_range_min, golden_range_max,  args.epsilon, args.almost_same)
         tensor_diff[coord[0], coord[1], coord[2], coord[3]] = val_class.value
         value_class_count[val_class] += 1
     
@@ -144,6 +146,8 @@ def analyze_tensor(
         corrupted_channels_count=len(faulty_channels),
         corrupted_values_count=len(sparse_diff),
         domain_class=domain_class,
+        golden_range_min=golden_range_min,
+        golden_range_max=golden_range_max,
         layout=args.layout,
         metadata=metadata
     )
