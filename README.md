@@ -1,212 +1,118 @@
-# cnn-error-classifier
+# NVBitFI Error Classifier
+This repository contains the classification tools used to analyze NVBitFI's results. It produces accurate reports of spatial patterns identified and domains distribution. It is also capable of creating visualizations of the identified errors and automatically generate the jsons used by CLASSES to perform error simulation. 
 
-Compares corrupted tensors with a gold one, classifying the differences by their domain and their spatial distribution.
+# Table of contents
 
-## Features
+## Copyright & License
 
-The input of the program is a golden .npy tensor and a folder containing faulty .npy tensors (both NHWC or NCHW formats can be processed).
+Copyright (C) 2023 Politecnico di Milano.
 
-The program will classify the faulty tensor based on the spatial distribution of the erroneous values. For each tensor an image
-that shows visually the differences with the golden tensor will be generated.
+This framework is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 
-The program also generates a json report containing info about the analysis 
+This framework is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the [GNU General Public License](https://www.gnu.org/licenses/) for more details.
 
-# How to run the script
+Neither the name of Politecnico di Milano nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+
+# Dependencies 
+The following libraries are required for this software to run correctly. 
+
+* contourpy
+* cycler
+* fonttools
+* kiwisolver
+* matplotlib
+* numpy
+* packaging
+* Pillow
+* pyparsing
+* python-dateutil
+* six
+* tqdm
+
+We provide a `requirements.txt` file that can be easily used to install all the necessary libraries as explained in the [Installation](#installation) section.
+
+# Installation 
+We suggest creating a virtual environment either using [Conda](https://docs.conda.io/en/latest/) or [Venv](https://docs.python.org/3/library/venv.html).
+To create one using the provided `requirements.txt` simply execute the following command
+```
+conda create --name <env> --file requirements.txt
+```
+replacing `<env>` with the name of the environment. Then you can activate the environment by running 
+```
+conda activate <env>
+```
+
+# Usage
+To correctly use the tool we first need to provide the corrupted tensors in a structure that is compatible with the classifier. 
 ## Folder structure
-
-The results of the injection are divided in batches and sub batches.
-
-To launch a classification open a terminal in the root of the repository and then launch the following command
-```sh
-python src/main.py <path_to_root> <relative_path_to_golden> <relative_path_to_sub_batches_dirs> <output_path>
 ```
-For understanding what to put in these positional parameters here is an example folder structure
-
+error-classifier/
+    ├── src/
+    │   ├── main.py
+    │   └── ...
+    ├── README.md
+    ├── requirements.txt
+    └── results_operator1/
+        ├── batch1/
+        │   └── test/
+        │       ├── golden.npy
+        │       └── injection_mode/
+        │           ├── error1.npy
+        │           ├── error2.npy
+        │           ├── ...
+        │           └── errorN.npy
+        ├── batch2
+        ├── ...
+        └── batchN
 ```
-root_path
-├── batch_1
-│   ├── test
-│   │   ├── golden.npy
-│   │   ├── sub_batch_1
-│   │   │   ├── faulty_1.npy
-│   │   │   ├── faulty_2.npy
-│   │   │   └── faulty_3.npy
-│   │   └── fp32_wrv
-│   │       ├── faulty_1.npy
-│   │       └── faulty_2.npy
-│   └── other_dir
-├── batch_2
-│   └── test
-│       ├── golden.npy
-│       ├── sub_batch_1
-│       │   ├── faulty_1.npy
-│       │   └── faulty_2.npy
-│       └── sub_batch_2
-│           ├── faulty_1.npy
-│           ├── faulty_2.npy
-│           └── faulty_3.npy
-├── batch_3
-│   └── test
-│       ├── golden.npy
-│       ├── sub_batch_1
-│       │   ├── faulty_1.npy
-│       │   └── faulty_2.npy
-│       └── sub_batch_2
-│           ├── faulty_1.npy
-│           ├── faulty_2.npy
-│           └── faulty_3.npy
-└── _ignored
+At the top level of the repository `cnn-error-classifier` we have a `src` folder that contains all the files needed by the tool. The `requirements.txt` file and some other files that can be ignored in this section. 
+
+We need to create a new folder for each operator that we are targeting with the injections. Inside this directory, called `results_operator1` in the above example, we will create one folder for each batch of tests that we executed giving it the following structure.
 ```
-
-All the folders right under the root path are called batches. Each batch contains at least one sub-batch. A sub-batch is a directory that contains faulty .npy files directly inside it.
-
-All the batch folders are contained inside the root path (batch_1, batch_2, ...). The folders starting with "_" directly under the root_path folder are ignored.
-
-The path to each batch folder will be called from now on batch_home_path. 
-
-The second argument (relative_path_to_golden) is the relative path from each batch's batch_home_path to the golden .npy file. This relative path is equal for all batches. Using the example above the second argument will be "test/golden.npy". In this way the program will look for a golden.npy file in the paths "root_path/batch_1/test/golden.npy", "root_path/batch_2/test/golden.npy", ...
-
-The third argument is the relative path from each batch's batch_home_path to the directory containing all the sub-batches directories, that will contain the faulty tensors.
-Using the example above the second argument will be simply "test". In this way the program will look for subfolders into the path "root_path/batch_1/test", and it will consider all the folders inside that path as sub batch folders. For batch 1 the sub_batches are "sub_batch_1" and "fp32_wrv". All the .npy files inside these folders will be considered as faulty tensors and they will all be compared with the batch golden tensor.
-
-The last argument is the path where you want to put the outputs of the analysis. It's a good practice to put the analysis outcomes in an empty folder.
-
-Summarizing, for the example above the command will be 
-
-```sh
-python src/main.py root_path test/golden.npy test output
+batchX/
+    └── test/
+        ├── golden.npy
+        └── injection_mode1/
+            ├── error1.npy
+            ├── error2.npy
+            ├── ...
+            └── errorN.npy
+        ├── ...
+        └── injection_modeN/
+            ├── error1.npy
+            ├── error2.npy
+            ├── ...
+            └── errorN.npy
+        
 ```
-The results of the analysis will be put in a new folder called output, right in the folder where the command was called.
+Each batch should have a subfolder called `test` inside which we find the following 
+* `golden.npy` the NumPy array of the expected result that will be used for reference against each corrupted tensor of the batch
+* `injection_mode` one folder for each injection mode adopted that contains all the corrupted tensors produced by NBBitFI.
 
-Here is another example
+## Running the tool
+If the results of the injection follow the supported structure we can execute the tool and classify the tensors. To do so we need to run the following command
+```bash
+python src/main.py <operator_folder> <golden_tensor_location> test <output_folder> <options>
 ```
-root_path
-├── batch_1
-│   ├── golden.npy
-│   ├── sub_batch_1
-│   │   ├── faulty_1.npy
-│   │   ├── faulty_2.npy
-│   │   └── faulty_3.npy
-│   └── sub_batch_2
-│       ├── faulty_1.npy
-│       └── faulty_2.npy
-├── batch_2
-│   ├── golden.npy
-│   ├── sub_batch_1
-│   │   ├── faulty_1.npy
-│   │   └── faulty_2.npy
-│   └── sub_batch_2
-│       ├── faulty_1.npy
-│       ├── faulty_2.npy
-│       └── faulty_3.npy
-├── batch_3
-│   ├── golden.npy
-│   ├── sub_batch_1
-│   │   ├── faulty_1.npy
-│   │   └── faulty_2.npy
-│   └── sub_batch_2
-│       ├── faulty_1.npy
-│       ├── faulty_2.npy
-│       └── faulty_3.npy
-├── batch_4
-│   ├── golden.npy
-│   ├── sub_batch_1
-│   │   ├── faulty_1.npy
-│   │   └── faulty_2.npy
-│   └── sub_batch_2
-│       ├── faulty_1.npy
-│       ├── faulty_2.npy
-│       └── faulty_3.npy
-└── _ignored
-```
-In this case the command will be
-```sh
-python src/main.py root_path golden.npy . output
-```
-## Command Line arguments
-If run without other options, the program will analyze all the tensors in all sub batches and it will compare them with the golden tensor of their batch. 
-For each faulty tensor a spatial and a domain classifications will be performed.
-Aggregated data of the classification is put in a general report inside the output folder called "global_report.json"
+where the arguments are the following 
+* `<operator_folder>` is the name of the folder that contains all the results of a given operator. In the example above it is `results_operator1`.
+* `<golden_tensor_location>` is the location of the golden tensor with respect to each batch folder. In the example above it is `test/golden.npy`. 
+* `<output_folder>` is the path to the output folder where the results of the analysis will be stored. It is not necessary that this folder exists, the tool will automatically check and create it if needed. 
 
-### NHWC and NCHW tensors
-This classifier supports tensors in NHWC and NCHW formats. If no flag is specified the script will assume that the tensor has NCHW format. The "-nhwc" flag will tell the script that the golden tensor and the faulty tensors are packed using the NHWC format
+This program also supports a set of options that can be enabled with apposite flags. 
 
-### Visualization
-To help you understand how the errors are distributed in the space in the faulty tensors you can add the "-v" (or "--visualize") flag. For each faulty tensor a .png image containing a plot of all corrupted values will be generated. The plot will show only the corrupted channels.
-
-![Error visualization plot](example_visualize.png)
-
-The images will be put in the folder of their spatial class.
-
-If you specify this flag while putting the output in a non empty folder where there are other visualizations, the old visualizations will be erased. If this flag is not specified, the old visualizations are not deleted.
-
-Generating the plots will slowdown the program a lot. If you are able it is recommended to enable the use of multiple process. See the next paragraphs.
-### Parallelism
-
-It is possible to divide the work between multiple processes, using multiprocessing. To enable this add the flag "-p N". This will use N worker processes in parallel. The most effective N values depends on the number of cores your CPU. Just don't use an N bigger than the number of cores in the processor. 
-
-
-### CLASSES models
-This script is able to generate models for the CLASSES framework. To enable the generation of these models use the flag "--classes" with two string parameters ("--classes Sx OPERATION"). The parameters are necessary to generate all the files in the format required by CLASSES. If you pass "--classes S1 conv" you will find CLASSES files in the output directory inside the subfolder "S1_conv". 
-You may directly copy this folder inside the CLASSES model directory.
-
-### Epsilon
-
-The flag "-eps EPS" ("--epsilon EPS") will set the epsilon to EPS. This value determine the minimum difference (in absolute value) needed to consider two numbers not equal. The default value is 1e-3.
-### Partial Reports
-You can generate a partial json report for each sub-batch by specifying "-pr" (--partial-reports) flag. The reports will be stored inside the ouput/reports/ folders.
-The report contains detailed reports for each sub batch.
-
-## Examples
-
-```sh
-python src/main.py root_path golden.npy . output -v -p 8 --classes S1 conv -eps 1e-2
-```
-Run the analysis using 8 processes in parallel, generate also the visualizations and the classes model. Change epsilon to 0.01.
-
-```sh
-python src/main.py root_path test/golden.npy test output -p 2
-```
-
-Run the analysis using 2 process in parallel. Don't generate new visualizations. Only global_report.json will be generated
-
-## Limitations
-
-Only tensors with batch dimension (N) equals to 1 can be processed.
-
-## Setup
-The program is tested from python > 3.6
-
-Create a virtual environment with your favorite package manager.
-
-Install the dependencies from the requirements.txt file
-
-* Venv:
-```sh
-pip install -r requirements.txt
-```
-
-* Conda:
-```sh
-conda install --file requirements.txt
-```
-
-If, you can't install it from requirments just install the three following libraries
-```
-numpy
-matplotlib
-tqdm
-```
-
-## Usage
-
-To run the program use:
-```sh
-python src/classifier.py [options] <path to golden npy tensor> <path to folder with corrupted tensors> <path to analysis output folder>
-```
-It is possible to specify -nhwc to process tensors that are stored using the NHWC format 
-
-To see what options are available use
-```sh
-python src/classifier.py -h
-```
+### Options
+The following options can be activated through specific flags
+* #### **Data format**
+    The default data format adopted by the classifier is  NCHW. It is possible to analyze tensors in the NHWC format by appending the flag `-nhwc` 
+* #### **Visualization**
+    This tool is capable of creating visualizations of the errors identified. Adding the flag `-v` or `--visualize` will enable this functionality. The images produced will be organized based on the spatial pattern. 
+    N.B. Creating such visualization is a costly operation and will make the execution of the tool slower.
+* #### **Parallelism**
+    To speedup the execution of the tool it is possible to enable multiprocessing. To do so use the flag `-p N` which will spawn `N` threads working in parallel. 
+* #### **CLASSES Models**
+    The objective of the fault injections is to create error models that can be used by CLASSES. To aid in this process this tool is capable of creating the required json files during the analysis. To enable this process use the flag `--classses Sx Operator`, where Sx is the number of the experiment and Operator is the name of the currently analyzed operator. I.e., if you are  creating the 4th model for the convolution use the flag `--classes S4 Conv`.
+* #### **Epsilon**
+    By default this classifier considers an error each value that differs from the golden version by a value greater than 1e-3. Using the flag `-eps VAL` we can specify a different threshold for the classifier. 
+* #### **Partial reports**
+    Using the flag `-pr` the tool will create partial reports for each batch of a given operator. 
