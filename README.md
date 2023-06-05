@@ -3,6 +3,14 @@ This repository contains the classification tools used to analyze NVBitFI's resu
 
 # Table of contents
 
+1. [Copyright & License](#copyright--license)
+2. [Dependencies](#dependencies)
+3. [Installation](#installation)
+4. [Usage](#usage)
+    1. [Folder Structure](#folder-structure)
+    2. [Running the tools](#running-the-tool)
+    3. [Options](#options)
+
 ## Copyright & License
 
 Copyright (C) 2023 Politecnico di Milano.
