@@ -1,5 +1,5 @@
 # NVBitFI Error Classifier
-This repository contains the classification tools used to analyze NVBitFI's results. It produces accurate reports of spatial patterns identified and domains distribution. It is also capable of creating visualizations of the identified errors and automatically generate the jsons used by CLASSES to perform error simulation. 
+This repository contains the classification tools used to analyze NVBitFI's results. It produces accurate reports of spatial patterns identified and domain distribution. It can also create visualizations of the identified errors and automatically generate the JSON files used by CLASSES to perform error simulations.
 
 # Table of contents
 
@@ -37,11 +37,11 @@ The following libraries are required for this software to run correctly.
 * six
 * tqdm
 
-We provide a `requirements.txt` file that can be easily used to install all the necessary libraries as explained in the [Installation](#installation) section.
+We provide a `requirements.txt` file that can be easily used to install all the necessary libraries, as explained in the [Installation](#installation) section.
 
 # Installation 
 We suggest creating a virtual environment either using [Conda](https://docs.conda.io/en/latest/) or [Venv](https://docs.python.org/3/library/venv.html).
-To create one using the provided `requirements.txt` simply execute the following command
+To make one using the provided `requirements.txt`, execute the following command
 ```
 conda create --name <env> --file requirements.txt
 ```
@@ -51,7 +51,8 @@ conda activate <env>
 ```
 
 # Usage
-To correctly use the tool we first need to provide the corrupted tensors in a structure that is compatible with the classifier. 
+To correctly use the tool, we must first provide the corrupted tensors in a compatible structure with the classifier.
+
 ## Folder structure
 ```
 error-classifier/
@@ -73,9 +74,8 @@ error-classifier/
         ├── ...
         └── batchN
 ```
-At the top level of the repository `cnn-error-classifier` we have a `src` folder that contains all the files needed by the tool. The `requirements.txt` file and some other files that can be ignored in this section. 
-
-We need to create a new folder for each operator that we are targeting with the injections. Inside this directory, called `results_operator1` in the above example, we will create one folder for each batch of tests that we executed giving it the following structure.
+At the top level of the repository `cnn-error-classifier`, we have a `src` folder containing all the files the tool needs.
+We must create a new folder for each operator we target with the injections. Inside this directory, called `results_operator1` in the above example, we will create one folder for each batch of tests we executed, giving it the following structure.
 ```
 batchX/
     └── test/
@@ -93,34 +93,35 @@ batchX/
             └── errorN.npy
         
 ```
-Each batch should have a subfolder called `test` inside which we find the following 
+Each batch should have a subfolder called `test` inside which we find the following.
 * `golden.npy` the NumPy array of the expected result that will be used for reference against each corrupted tensor of the batch
 * `injection_mode` one folder for each injection mode adopted that contains all the corrupted tensors produced by NBBitFI.
 
 ## Running the tool
-If the results of the injection follow the supported structure we can execute the tool and classify the tensors. To do so we need to run the following command
+If the injection results follow the supported structure, we can execute the tool and classify the tensors. To do so, we need to run the following command
+
 ```bash
 python src/main.py <operator_folder> <golden_tensor_location> test <output_folder> <options>
 ```
-where the arguments are the following 
-* `<operator_folder>` is the name of the folder that contains all the results of a given operator. In the example above it is `results_operator1`.
-* `<golden_tensor_location>` is the location of the golden tensor with respect to each batch folder. In the example above it is `test/golden.npy`. 
-* `<output_folder>` is the path to the output folder where the results of the analysis will be stored. It is not necessary that this folder exists, the tool will automatically check and create it if needed. 
 
-This program also supports a set of options that can be enabled with apposite flags. 
+where the arguments are the following
+* `<operator_folder>`is the folder name that contains all the results of a given operator. In the example above, it is `results_operator1`.
+* `<golden_tensor_location>` is the location of the golden tensor with respect to each batch folder. In the example above, it is `test/golden.npy`. 
+* `<output_folder>` is the path to the output folder to store the analysis results. This folder doesn't need to exist. The tool will automatically check and create it if needed.
+This program also supports options that can be enabled with suitable flags.
 
 ### Options
 The following options can be activated through specific flags
 * #### **Data format**
-    The default data format adopted by the classifier is  NCHW. It is possible to analyze tensors in the NHWC format by appending the flag `-nhwc` 
+    The default data format adopted by the classifier is  NCHW. Analyzing tensors in the NHWC format is possible by appending the flag `-nhwc`. 
 * #### **Visualization**
     This tool is capable of creating visualizations of the errors identified. Adding the flag `-v` or `--visualize` will enable this functionality. The images produced will be organized based on the spatial pattern. 
-    N.B. Creating such visualization is a costly operation and will make the execution of the tool slower.
+    N.B. Creating such a visualization is costly and will make the execution of the tool slower.
 * #### **Parallelism**
-    To speedup the execution of the tool it is possible to enable multiprocessing. To do so use the flag `-p N` which will spawn `N` threads working in parallel. 
+    To speed up the execution of the tool, it is possible to enable multiprocessing. To do so, use the flag `-p N`, which will spawn `N` threads working in parallel. 
 * #### **CLASSES Models**
-    The objective of the fault injections is to create error models that can be used by CLASSES. To aid in this process this tool is capable of creating the required json files during the analysis. To enable this process use the flag `--classses Sx Operator`, where Sx is the number of the experiment and Operator is the name of the currently analyzed operator. I.e., if you are  creating the 4th model for the convolution use the flag `--classes S4 Conv`.
+    The goal of performing fault injections is to create error models that CLASSES can use. This tool can make the required JSON files during the analysis to aid this process. To enable this process, use the flag `--classes Sx Operator`, where Sx is the number of the experiment, and Operator is the name of the currently analyzed operator. I.e., if you are creating the 4th model for the convolution, use the flag `--classes S4 Conv`.
 * #### **Epsilon**
-    By default this classifier considers an error each value that differs from the golden version by a value greater than 1e-3. Using the flag `-eps VAL` we can specify a different threshold for the classifier. 
+    By default, this classifier considers an error in each value that differs from the golden version by a value greater than 1e-3. Using the flag `-eps VAL`, we can specify a different threshold for the classifier. 
 * #### **Partial reports**
-    Using the flag `-pr` the tool will create partial reports for each batch of a given operator. 
+    Using the flag `-pr`, the tool will create partial reports for each operator's batch. 
