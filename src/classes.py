@@ -1,20 +1,37 @@
-from collections import OrderedDict, defaultdict
-from functools import reduce
-import functools
-import itertools
+from collections import defaultdict
 import json
 from operator import itemgetter
 import os
-from typing import Any, Dict, Iterable, List, Literal, Tuple, Union
+from typing import Any, Dict, Iterable, List, Literal
+from domain_classifier import ValueClass
 
-from utils import count_by, sort_dict
+from utils import sort_dict
 from analyzed_tensor import AnalyzedTensor
 from args import Args
 from utils import group_by
-import pprint as pp
 import collections.abc
 
 def generate_classes_models(results : Iterable[AnalyzedTensor], args: Args):
+    """
+    Generate a json file containing that can be used by the CLASSES framework
+    to simulate the errors.
+
+    Parameters
+    ---
+    results : Iterable[AnalyzedTensor]
+        Result of the analysis for each corrupted tensor.
+    args : Args
+        Object containing all the user preferences supplied by the command line arguments
+
+    Returns
+    ---
+    None. A json file named "{args.classes[0]}_{args.classes[1]}.json" will be created in the result folder
+
+    Raises
+    ---
+    FileNotFoundError: If the folder where the file is written does not exist
+
+    """
     tensor_by_sp_class = group_by(results, key=lambda x: x.spatial_class)
 
     classes_model = {
@@ -27,9 +44,10 @@ def generate_classes_models(results : Iterable[AnalyzedTensor], args: Args):
             "count": len(tensors),
             "frequency": len(tensors) / len(results),
             "categories_count": categories_count,
-            "domain_classes": generate_domain_class_freq(tensors),
+            "domain_classes": generate_domain_class_freq(tensors, len(tensors) / len(results)),
             "parameters": parameter_list
         }
+
 
     classes_model = prune_classes_model(classes_model, args)
 
@@ -121,7 +139,6 @@ def merge_categories(categories : List[Dict[str, Any]]) -> Dict[str, Any]:
         "overall_frequency": None,
         "count": sum(cat["count"] for cat in categories)
     }
-    print(unified_cat)
     return unified_cat
 
 
@@ -182,10 +199,9 @@ def generate_parameter_list(sp_class_results : Iterable[AnalyzedTensor], total_a
 
     return sorted(parameters_list, key= lambda x: x["count"], reverse=True), parameters_category_count
 
-def generate_domain_class_freq(sp_class_results : Iterable[AnalyzedTensor]):
+def generate_domain_class_freq(sp_class_results : Iterable[AnalyzedTensor], sp_class_freq : float):
     def dom_classes_hashable_keys(t : AnalyzedTensor):
         hashable_key = tuple(sorted(t.domain_class.items(), key=itemgetter(0)))
-        print(hashable_key)
         return hashable_key
     tensors_count_by_dom_class = group_by(sp_class_results, key=dom_classes_hashable_keys)
     random_count = 0
@@ -196,7 +212,7 @@ def generate_domain_class_freq(sp_class_results : Iterable[AnalyzedTensor]):
         dom_class = tensors_in_dom_class[0].domain_class
         dom_class_count = len(tensors_in_dom_class)
         dom_class_rel_freq = dom_class_count / len(sp_class_results)
-        if dom_class_rel_freq < 0.05 or dom_class_count < 5 or "random" in dom_class:
+        if dom_class_rel_freq * sp_class_freq < 0.01 or dom_class_count < 5 or "random" in dom_class:
             random_count += dom_class_count
         else:
             sorted_dom_class = sort_dict(dom_class, sort_key=lambda x: x[1][0], reverse=True)
@@ -207,10 +223,26 @@ def generate_domain_class_freq(sp_class_results : Iterable[AnalyzedTensor]):
             })
     dom_classes = sorted(dom_classes, key=lambda x: x["frequency"], reverse=True)
     if random_count > 0:
+
+        values_distribution = value_class_distribution(sp_class_results)
+
         dom_classes.append({
             "random": (100.0, 100.0),
             "count": random_count,
+            "values": values_distribution,
             "frequency": random_count / len(sp_class_results)       
         })
 
     return dom_classes
+
+
+def value_class_distribution(sp_class_results : Iterable[AnalyzedTensor]) -> Dict[str, float]:
+    value_classes_counts : defaultdict[str, int] = defaultdict(int)
+    total_count = 0
+    for cl in sp_class_results:
+        for val_class, cnt in cl.value_classes_counts.items():
+            if val_class == ValueClass.SAME:
+                continue
+            value_classes_counts[val_class.display_name()] += cnt
+            total_count += cnt
+    return {val_class : cnt / total_count for val_class, cnt in value_classes_counts.items()}

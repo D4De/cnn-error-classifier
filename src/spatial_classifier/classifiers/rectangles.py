@@ -50,7 +50,7 @@ def rectangles_pattern(
         SpatialClass.RECTANGLES,
         keys = {
             "rectangle_width": max_w - min_w,
-            "rectangle_heigth": max_h - min_h,
+            "rectangle_height": max_h - min_h,
             "affected_channels_pct": affected_channels_pct
         },
         stats= {

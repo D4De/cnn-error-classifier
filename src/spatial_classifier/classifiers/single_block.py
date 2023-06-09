@@ -21,7 +21,7 @@ def single_block_pattern(
     block_corruption_pct = quantize_percentage(len(indexes) / (block_length))
     return SpatialClassParameters(SpatialClass.SINGLE_BLOCK, 
         keys = {
-            "block_length": block_length,
+            "block_size": block_length,
             "block_corruption_pct": block_corruption_pct
         }, 
         stats = {})

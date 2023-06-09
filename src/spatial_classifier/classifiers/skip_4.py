@@ -25,15 +25,21 @@ def skip_4_pattern(
 
     The position 0 does not count either for the good_positions and for the wrong_positions
     """
+    skip_amount = 4
     coordinates = set([raveled_channel_index(shape, coord) for coord in sparse_diff])
     smallest_coordinate = min(coordinates)
     # to be a skip 4 error it should be true that (raveled_channel_index(error) === smallest_coordinate mod 4)
     # 0 is always allowed inside the skip4 pattern
-    candidate_positions = set(range(smallest_coordinate, shape.H * shape.W, 4))
+    candidate_positions = set(range(smallest_coordinate, shape.H * shape.W, skip_amount))
     # All the errors in the tensor that have a distance multiple of 4
     good_positions = coordinates & candidate_positions
     # all the other positions
     wrong_positions = coordinates - candidate_positions
+
+    if shape.H * shape.W - max(good_positions) <= skip_amount:
+        unique_channel_indexes = "CUT"
+    else:
+        unique_channel_indexes = len(good_positions)
 
     if len(good_positions) >= 2 and len(wrong_positions) <= 1:
         # Generate the error_pattern

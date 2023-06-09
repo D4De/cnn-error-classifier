@@ -31,8 +31,8 @@ def single_channel_random_pattern(
                 },
                 stats = {
                     "max_cardinality": (error_cardinality, MaxAggregator()),
-                    "min_skip": (min(value_skips), MinAggregator()),
-                    "max_skip": (max(value_skips), MaxAggregator()),
+                    "min_value_skip": (min(value_skips), MinAggregator()),
+                    "max_value_skip": (max(value_skips), MaxAggregator()),
 
                 }
             )
