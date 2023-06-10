@@ -32,14 +32,13 @@ def shattered_channel_pattern(
 
     span_width_sum = 0
     max_span = -1
-
+    print(indexes_by_chan)
     for indexes in indexes_by_chan.values():
         min_idx = min(indexes)
         max_idx = max(indexes)
-        span_width = max_idx - min_idx
+        span_width = max_idx - min_idx + 1
         span_width_sum += span_width
         max_span = max(max_span, span_width)
-
     avg_span_corruption_pct = quantize_percentage(len(sparse_diff) / span_width_sum)
     affected_channel_count = len(corr_channels)
     channel_skips = [curr - prev for prev, curr in zip(corr_channels, corr_channels[1:])]      

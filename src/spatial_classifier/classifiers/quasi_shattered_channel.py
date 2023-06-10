@@ -36,7 +36,7 @@ def quasi_shattered_channel_pattern(
     for indexes in indexes_by_chan.values():
         min_idx = min(indexes)
         max_idx = max(indexes)
-        span_width = max_idx - min_idx
+        span_width = max_idx - min_idx + 1
         span_width_sum += span_width
         min_span = min(min_span, span_width)
         max_span = max(max_span, span_width)
