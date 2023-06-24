@@ -1,4 +1,4 @@
-from typing import Dict, Iterable, Tuple, Optional
+from typing import Iterable, Optional
 
 from coordinates import Coordinates, raveled_channel_index
 from spatial_classifier.aggregators import MaxAggregator, MinAggregator
@@ -32,7 +32,6 @@ def shattered_channel_pattern(
 
     span_width_sum = 0
     max_span = -1
-    print(indexes_by_chan)
     for indexes in indexes_by_chan.values():
         min_idx = min(indexes)
         max_idx = max(indexes)

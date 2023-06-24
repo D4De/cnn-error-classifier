@@ -75,9 +75,13 @@ def domain_classification(value_classes_counts : Dict[ValueClass, int]) -> Dict[
         return {only_value_class.display_name() : (100.0, 100.0)}
     elif len(present_value_classes) == 2:
         class_1, class_2 = present_value_classes
+        quant_levels = 8
+        class_1_range = quantize_percentage(value_classes_counts[class_1] / val_classes_freq_sum, quantization_levels=quant_levels)
+        class_2_range_bot = 100 - class_1_range[1]
+        class_2_range_top = max(100, class_2_range_bot + 100 / quant_levels)
         return {
-            class_1.display_name(): quantize_percentage(value_classes_counts[class_1] / val_classes_freq_sum, quantization_levels=7),
-            class_2.display_name(): quantize_percentage(value_classes_counts[class_2] / val_classes_freq_sum, quantization_levels=7)
+            class_1.display_name(): class_1_range,
+            class_2.display_name(): (class_2_range_bot, class_2_range_top)
         }
     else:
         return {

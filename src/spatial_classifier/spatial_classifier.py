@@ -61,7 +61,7 @@ MULTI_CHANNEL_CLASSIFIERS_NEW = OrderedDict(
         (SpatialClass.FULL_CHANNELS, full_channels_pattern),
         (SpatialClass.RECTANGLES, rectangles_pattern),
         (SpatialClass.SHATTERED_CHANNEL, shattered_channel_pattern),
-#        (SpatialClass.QUASI_SHATTERED_CHANNEL, quasi_shattered_channel_pattern),
+        (SpatialClass.QUASI_SHATTERED_CHANNEL, quasi_shattered_channel_pattern),
         (SpatialClass.MULTIPLE_CHANNELS_UNCATEGORIZED, multiple_channels_uncategorized_pattern),
     ]
 )

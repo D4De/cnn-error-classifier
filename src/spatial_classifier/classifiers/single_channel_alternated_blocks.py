@@ -51,7 +51,6 @@ def single_channel_alternated_blocks_pattern(
             "max_block_skip": max_block_skip
         },
         stats= {
-            "max_feature_map_width": (shape.W, MaxAggregator()),
-            "max_feature_map_height":  (shape.H, MaxAggregator())
+            "max_feature_map_size": (max(shape.W, shape.H), MaxAggregator())
         }
     )
