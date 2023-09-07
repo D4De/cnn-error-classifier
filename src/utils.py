@@ -48,8 +48,11 @@ T = TypeVar("T")
 S = TypeVar("S")
 
 
-
 def group_by(results : Iterable[S], key : Callable[[S],T]) -> Dict[T, List[S]]:
+    """
+    Takes an Iterable of a type S and a grouping function that maps an object of type S to its group, represented by a variable of type T.
+    Returns  
+    """
     groups : defaultdict[T, List[S]] = defaultdict(list)
 
     for result in results:

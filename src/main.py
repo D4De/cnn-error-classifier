@@ -8,7 +8,7 @@ import os
 from tqdm import tqdm
 import json
 import sys
-from aggregators import cardinalities_counts, experiment_counts, spatial_classes_counts, tensor_count_by_shape, tensor_count_by_sub_batch
+from aggregators import cardinalities_counts, cardinalities_counts_by_sp_class, experiment_counts, spatial_classes_counts, tensor_count_by_shape, tensor_count_by_sub_batch
 from analyzed_tensor import AnalyzedTensor
 from args import Args, create_parser
 from batch_analyzer import analyze_batch
@@ -235,6 +235,7 @@ def main():
     #global_report["domain_classes_types_per_sp_class"] = domain_class_type_per_spatial_class(analyzed_tensors)
     #global_report["domain_classes_counts"] = domain_classes_counts(analyzed_tensors)
     global_report["cardinalities"] = cardinalities_counts(analyzed_tensors)
+    global_report["class_cardinalites"] = cardinalities_counts_by_sp_class(analyzed_tensors)
 
 
     with open(os.path.join(args.output_dir, "global_report.json"), "w") as f:

@@ -22,6 +22,17 @@ def cardinalities_counts(results : List[AnalyzedTensor]) -> Dict[int, int]:
     
     return sort_dict(counts, sort_key=itemgetter(1), reverse=True)
 
+def cardinalities_counts_by_sp_class(results : List[AnalyzedTensor]) -> Dict[str, Dict[int, int]]:
+    result = {}
+    groups = group_by(results, key=lambda x: x.spatial_class.name)
+
+    for group, tensors in groups.items():
+        result[group] = sort_dict(count_by(tensors, key=lambda x: x.corrupted_values_count), sort_key=itemgetter(1), reverse=True)
+    
+    
+    return result
+
+
 def domain_classes_counts(results : List[AnalyzedTensor]) -> Dict[str, int]:
     counts = defaultdict(int)
     for result in results:

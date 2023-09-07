@@ -115,18 +115,21 @@ def analyze_tensor(
 
 
     if args.visualize:
-        visualize(
-            tensor_diff,
-            faulty_channels,
-            args.layout,
-            spatial_class.output_path(
-                args.visualize_path, f'{metadata["batch_name"]}_{file_name}'
-            ),
-            save=True,
-            show=False,
-            suptitile=f'{metadata.get("batch_name") or ""} {metadata.get("sub_batch_name") or ""} {golden_shape.C}x{golden_shape.H}x{golden_shape.W}',
-            invalidate=True,
-        )
+        folder_path = spatial_class.class_folder(args.visualize_path)
+        file_count = len([x for x in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, x))])
+        if args.visualize_limit == 0 or file_count < args.visualize_limit:
+            visualize(
+                tensor_diff,
+                faulty_channels,
+                args.layout,
+                spatial_class.output_path(
+                    args.visualize_path, f'{metadata["batch_name"]}_{file_name}'
+                ),
+                save=True,
+                show=False,
+                suptitile=f'{metadata.get("batch_name") or ""} {metadata.get("sub_batch_name") or ""} {golden_shape.C}x{golden_shape.H}x{golden_shape.W}',
+                invalidate=True,
+            )
         
 
     # Per tensor report generator
