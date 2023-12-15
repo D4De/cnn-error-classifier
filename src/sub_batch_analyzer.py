@@ -26,12 +26,17 @@ def analyze_tensor_directory(
     results : List[AnalyzedTensor]= []
     classified_tensors = 0
 
+    golden_range_min = float(np.min(golden))
+    golden_range_max = float(np.max(golden))
+ 
     # Iterate over all tensor files
     for file_path in sorted(faulty_files_path):
         sp_class, result = analyze_tensor(
             file_path=file_path,
             golden=golden,
             args=args,
+            golden_range_min= golden_range_min,
+            golden_range_max= golden_range_max,
             metadata=metadata,
         )
         if on_tensor_completed is not None:

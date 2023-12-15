@@ -69,6 +69,8 @@ def raveled_tensor_index(shape: Coordinates, coordinate: Coordinates) -> int:
 
 def identify_block_length(
     indexes: Iterable[int],
+    min_block_size : int = 8,
+    max_block_size : int = 64
 ) -> Union[Tuple[int, int, int], None]:
     cardinality = len(indexes)
     if cardinality <= 10:
@@ -79,11 +81,13 @@ def identify_block_length(
     span = block_end - block_begin
 
     # check that errors have the right cardinality for a block length of 16,32,64 and that they are all within the block
-    if 10 < cardinality <= 16 and span <= 16:
+    if 7 < cardinality <= 8 and span <= 8 and max_block_size >= 8 and min_block_size <= 8:
+        return 8, block_begin % 8, block_begin // 8
+    if 9 < cardinality <= 16 and span <= 16 and max_block_size >= 16 and min_block_size <= 16:
         return 16, block_begin % 16, block_begin // 16
-    elif 16 < cardinality <= 32 and span <= 32:
+    elif 16 < cardinality <= 32 and span <= 32 and max_block_size >= 32 and min_block_size <= 32:
         return 32, block_begin % 32, block_begin // 32
-    elif 32 < cardinality <= 64 and span <= 64:
+    elif 32 < cardinality <= 64 and span <= 64 and max_block_size >= 64 and min_block_size <= 64:
         return 64, block_begin % 64, block_begin // 64
     else:
         return None

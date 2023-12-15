@@ -1,16 +1,19 @@
-from typing import Dict, Iterable, Tuple
+from typing import Dict, Iterable, Optional, Tuple
 
 from coordinates import Coordinates, identify_block_length, raveled_channel_index
-
+from spatial_classifier.aggregators import MaxAggregator, MinAggregator
+from spatial_classifier.spatial_class import SpatialClass
+from spatial_classifier.spatial_class_parameters import SpatialClassParameters
+from utils import quantize_percentage
 
 def multi_channel_multi_block_pattern(
     sparse_diff: Iterable[Coordinates],
     shape: Coordinates,
     corr_channels: Iterable[int],
-) -> Tuple[bool, Dict[str, any]]:
+) -> Optional[SpatialClassParameters]:
     # There should be at least two channels involved
     if len(corr_channels) < 2:
-        return False, {}
+        return None
     block_start = shape.H * shape.W
     # Stores the block with the biggest length
     max_block_length = -1
@@ -27,7 +30,7 @@ def multi_channel_multi_block_pattern(
         )
         first_chan_error = this_chan_indexes[0]
         indexes_by_channel[chan] = this_chan_indexes
-        result = identify_block_length(this_chan_indexes)
+        result = identify_block_length(this_chan_indexes, min_block_size = 8, max_block_size=shape.W * shape.H)
         # No block identified -> This could not be a leader channel
         if result is None:
             continue
@@ -43,7 +46,7 @@ def multi_channel_multi_block_pattern(
             block_start = first_chan_error
             leader_chan = chan
     if leader_chan is None:
-        return False, {}
+        return None
     found_mismatch = False
     # To match with this pattern, in all corrupted tensors the errors must be contained in the same block
     # Scan all the blocks (except the leader) to check if there no are errors outside the block
@@ -60,30 +63,23 @@ def multi_channel_multi_block_pattern(
                 found_mismatch = True
 
     if found_mismatch:
-        return False, {}
-    corr_indexes = [
-        raveled_channel_index(shape, coord) - block_start for coord in sparse_diff
-    ]
-    min_idx = min(corr_indexes)
-    max_idx = max(corr_indexes)
-    min_c = min(corr_channels)
-    max_c = max(corr_channels)
-    corrupted_feature_maps = len(corr_channels)
+        return None
 
-    error_pattern = (
-        max_block_length,
-        tuple(
-            (
-                chan - min_c,
-                tuple(
-                    error_idx - block_start for error_idx in indexes_by_channel[chan]
-                ),
-            )
-            for chan in corr_channels
-        ),
+    affected_channel_count = len(corr_channels)
+    channel_skips = [curr - prev for prev, curr in zip(corr_channels, corr_channels[1:])]      
+    affected_channels_pct = quantize_percentage(affected_channel_count / shape.C)
+    avg_block_corruption_pct = quantize_percentage(len(sparse_diff) / (max_block_length * affected_channel_count))
+
+    return SpatialClassParameters(
+        SpatialClass.MULTI_CHANNEL_BLOCK,
+        keys = {
+            "block_size": max_block_length,
+            "avg_block_corruption_pct": avg_block_corruption_pct,
+            "affected_channels_pct": affected_channels_pct,
+        },
+        stats = {
+            "max_corrupted_channels": (affected_channel_count, MaxAggregator()),
+            "min_channel_skip": (min(channel_skips, default=1), MinAggregator()),
+            "max_channel_skip": (max(channel_skips, default=1), MaxAggregator())
+        }
     )
-    return True, {
-        "error_pattern": error_pattern,
-        "align": block_length,
-        "MAX": [corrupted_feature_maps, max_c - min_c, min_idx, max_idx],
-    }

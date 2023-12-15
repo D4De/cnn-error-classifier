@@ -8,18 +8,19 @@ import os
 from tqdm import tqdm
 import json
 import sys
-from aggregators import cardinalities_counts, classes_triple_counts, domain_class_type_per_spatial_class, domain_classes_counts, domain_classes_types_counts, experiment_counts, spatial_classes_counts, tensor_count_by_shape, tensor_count_by_sub_batch
+from aggregators import cardinalities_counts, cardinalities_counts_by_sp_class, experiment_counts, spatial_classes_counts, tensor_count_by_shape, tensor_count_by_sub_batch
 from analyzed_tensor import AnalyzedTensor
 from args import Args, create_parser
 from batch_analyzer import analyze_batch
 import numpy as np
-from classes import generate_classes_models_old
+from classes import generate_classes_models
 from db import create_db, delete_db, put_experiment_data
+import traceback
 
 REPORT_FILE = "report.json"
 TOP_PATTERNS_PCT = 5
 
-from spatial_classifier import (
+from spatial_classifier.spatial_classifier import (
     clear_spatial_classification_folders,
     create_visual_spatial_classification_folders,
 )
@@ -105,7 +106,7 @@ def progress_handler(queue: Queue, work: int):
         work_count = 0
         while True:
             try:
-                message, args = queue.get(True, 10)
+                message, args = queue.get(True, 15)
                 if message == "exit":
                     break
                 elif message == "processed":
@@ -209,7 +210,7 @@ def main():
     result_count = len(analyzed_tensors)
     # Generate the json files of errors models needed in the CLASSES framework (if option --classes is specified in arguments)
     if args.classes is not None and result_count > 0:
-        generate_classes_models_old(analyzed_tensors, args)
+        generate_classes_models(analyzed_tensors, args)
     
     if args.database:
         db_path = os.path.join(args.output_dir, 'experiments.sqlite')
@@ -219,6 +220,7 @@ def main():
             log.info(f"Saved experiments in {db_path}")
         except Exception as e:
             log.error(f"Exception {e} happened while saving to the db")
+            traceback.print_exc(e)
 
 
 
@@ -229,17 +231,16 @@ def main():
     global_report["tensors_by_shape"] = tensor_count_by_shape(analyzed_tensors)
     global_report["classified_tensors"] = result_count
     global_report["spatial_classes"] = spatial_classes_counts(analyzed_tensors)
-    global_report["domain_classes_types_per_tensor"] = domain_classes_types_counts(analyzed_tensors)
-    global_report["domain_classes_types_per_sp_class"] = domain_class_type_per_spatial_class(analyzed_tensors)
-    global_report["domain_classes_counts"] = domain_classes_counts(analyzed_tensors)
+    #global_report["domain_classes_types_per_tensor"] = domain_classes_types_counts(analyzed_tensors)
+    #global_report["domain_classes_types_per_sp_class"] = domain_class_type_per_spatial_class(analyzed_tensors)
+    #global_report["domain_classes_counts"] = domain_classes_counts(analyzed_tensors)
     global_report["cardinalities"] = cardinalities_counts(analyzed_tensors)
+    global_report["class_cardinalites"] = cardinalities_counts_by_sp_class(analyzed_tensors)
 
 
     with open(os.path.join(args.output_dir, "global_report.json"), "w") as f:
         f.writelines(json.dumps(global_report, indent=2))
     
-    with open(os.path.join(args.output_dir, "stats.json"), "w") as f:
-        json.dump(classes_triple_counts(analyzed_tensors), f)
 
 
 if __name__ == "__main__":

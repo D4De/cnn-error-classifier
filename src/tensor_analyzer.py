@@ -1,12 +1,12 @@
+from collections import defaultdict
 import os
-from typing import Any, Dict, Tuple, Union
+from typing import Optional, Tuple
 from args import Args
 
-from coordinates import TensorLayout, map_to_coordinates, numpy_coords_to_python_coord
-from domain_classifier import DomainClass
+from coordinates import map_to_coordinates, numpy_coords_to_python_coord
+from domain_classifier import ValueClass, domain_classification, value_classification
 from analyzed_tensor import AnalyzedTensor
-from spatial_classifier import spatial_classification
-from domain_classifier import domain_classification_vect
+from spatial_classifier.spatial_classifier import spatial_classification
 import logging as log
 import numpy as np
 
@@ -16,55 +16,48 @@ from visualizer import visualize
 def analyze_tensor(
     file_path: str,
     golden: np.ndarray,
+    golden_range_min: float,
+    golden_range_max: float,
     args: Args,
     metadata: dict = {},
-) -> Tuple[str, Union[AnalyzedTensor, None]]:
+) -> Tuple[str, Optional[AnalyzedTensor]]:
     """
     Analyzes a single tensor, in a directory of faulty tensors
-    Returns a tuple of two items.
-    The first contains the spatial class of the tensor, the second dictionary with various data about the analysis
 
-    file_path: str
+    Parameters
     ---
-    Path to the faulty tensor
-
-    golden: np.ndarray
-    ---
-    The golden tensor, that will be compared with the faulty
-
-    layout : TensorLayout
-    ---
-    The layout in which both the golden and the faulty tensors are stored
-
-    epsilon : float
-    ---
-    The minimum (absolute value) difference between two values needed to consider
-    them different.
-
-    almost_same : bool
-    ---
-    If true, two different values that have an absolute value difference less than epsilon,
-    will be classified as "almost_same". If false, the two values are considered equal. See Args documentation
-
-    visualize_errors : bool
-    ---
-    If true a visualization of the error locations will be generated and saved as png
-
-    output_dir : str
-    ---
-    A path to the root of the directory where all outputs will be saved
-
+    file_path : str
+        A relative or absolute path to the corrupted tensor to analyze
+    golden : ndarray
+        A numpy array containing the golden tensor, to compare with the corrupted one
+    golden_range_min : float
+        The lowest value in the golden tensor
+    golden_range_max : float
+        The highest value in the golden tensor     
+    args : Args
+        Object containing all the user preferences supplied by the command line arguments
     metadata : dict
-    ---
-    A dictionary that contains metadata about the text. The mandatory metadata, needed for processing and classifying the tensor are:
-    - bfm: Fault Model
-    - igid: Instruction Group Id
-    - batch_name: str that indicates the batch name -> contained in info.json
+        Extra data on how the experiments were conducted, contained in a key-value dict.
+        "batch_name" and "sub_batch_name" keys are required, the rest are not needed in order
+        to make the classification work.
 
-    bfm and igid are derived from the name of the folders that contains faulty tensors. All these folders' names must have the following structure <bfm>_<igid>
+        In particular the values associated to "batch_name" and "sub_batch_name" 
+        will appear on the visulizer plots, and are used in the output database 
+
+
+    Returns
+    ---
+    Depending on the outcome of the analysis:
+        * If the corrupted tensor npy file fails to open or has a different shape than the golden:
+            * ("skipped", None) will be returned
+        * if the corrupted tensor is equal or almost equal (all differences under args.epsilon) to the golden one
+            * ("masked", None)
+        * otherwise, if the analysis succeeds:
+            * (<sp_class_display_name>, AnalyzedTensor object) where:
+                * <sp_class_display_name> is the display name of the spatial class to which the corrupted tensor belongs in relation to the golden one
+                * AnalyzedTensor object: An object containing all the details of the analysis
+
     """
-    # Initialization
-    temp_dom_class_count = np.int64(np.zeros(len(DomainClass)))
 
     # Opening faulty tensor
     file_name = os.path.basename(file_path).split(".")[0]
@@ -78,7 +71,6 @@ def analyze_tensor(
 
     faulty_shape = map_to_coordinates(faulty.shape, args.layout)
     golden_shape = map_to_coordinates(golden.shape, args.layout)
-
     # Check shape correctness
     if faulty_shape != golden_shape:
         log.warn(
@@ -90,17 +82,23 @@ def analyze_tensor(
         log.warn(f"Skipping {file_path} not supported tensor (Batch dim > 1)")
         return "skipped", None
 
-    # Execute error domain classification on the whole tensor
-    tensor_diff = domain_classification_vect(golden, faulty, args.epsilon, args.almost_same)
-
-    # Count occourences of each domain class
-    cat, counts = np.unique(tensor_diff, return_counts=True)
-
-    for i in range(len(counts)):
-        temp_dom_class_count[cat[i]] = counts[i]
+    value_class_count = defaultdict(int)
 
     # Generate a list of all coordinates where a difference is observed (Sparse matrix)
-    sparse_diff_native_coords = list(zip(*np.where(tensor_diff > 0)))
+    if args.almost_same:
+        sparse_diff_native_coords = list(zip(*np.nonzero(faulty - golden)))
+    else:
+        sparse_diff_native_coords = list(zip(*np.where(np.abs(faulty - golden) >= args.epsilon)))
+    faulty_native_shape = faulty.shape
+    tensor_diff = np.zeros(faulty_native_shape, dtype=np.int8)
+
+    for coord in sparse_diff_native_coords:
+        val_class = value_classification(golden[coord[0], coord[1], coord[2], coord[3]], faulty[coord[0], coord[1], coord[2], coord[3]], golden_range_min, golden_range_max,  args.epsilon, args.almost_same)
+        tensor_diff[coord[0], coord[1], coord[2], coord[3]] = val_class.value
+        value_class_count[val_class] += 1
+    
+    value_class_count[ValueClass.SAME] = golden.size - sum(value_class_count.values())
+        
 
     # No diff = masked
     if len(sparse_diff_native_coords) == 0:
@@ -112,30 +110,27 @@ def analyze_tensor(
     ]
 
     # Pefmorm spatial classifcation
-    spatial_class, pattern_params = spatial_classification(sparse_diff, golden_shape)
+    spatial_class, pattern_params, faulty_channels = spatial_classification(sparse_diff, golden_shape)
+    domain_class = domain_classification(value_class_count)
 
-    # Get faults for each channel
-    # faulty_channels = {coord.C for coord in sparse_diff}
-    if args.layout == TensorLayout.NCHW:
-        channel_sums = np.sum(tensor_diff, axis=(0, 2, 3))
-    elif args.layout == TensorLayout.NHWC:
-        channel_sums = np.sum(tensor_diff, axis=(0, 1, 2))
-
-    (faulty_channels,) = np.where(channel_sums != 0)
 
     if args.visualize:
-        visualize(
-            tensor_diff,
-            faulty_channels.tolist(),
-            args.layout,
-            spatial_class.output_path(
-                args.visualize_path, f'{metadata["batch_name"]}_{file_name}'
-            ),
-            save=True,
-            show=False,
-            suptitile=f'{metadata.get("batch_name") or ""} {metadata.get("igid") or ""} {metadata.get("bfm") or ""} {golden_shape.C}x{golden_shape.H}x{golden_shape.W}',
-            invalidate=True,
-        )
+        folder_path = spatial_class.class_folder(args.visualize_path)
+        file_count = len([x for x in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, x))])
+        if args.visualize_limit == 0 or file_count < args.visualize_limit:
+            visualize(
+                tensor_diff,
+                faulty_channels,
+                args.layout,
+                spatial_class.output_path(
+                    args.visualize_path, f'{metadata["batch_name"]}_{file_name}'
+                ),
+                save=True,
+                show=False,
+                suptitile=f'{metadata.get("batch_name") or ""} {metadata.get("sub_batch_name") or ""} {golden_shape.C}x{golden_shape.H}x{golden_shape.W}',
+                invalidate=True,
+            )
+        
 
     # Per tensor report generator
     return spatial_class.display_name(), AnalyzedTensor(
@@ -146,13 +141,12 @@ def analyze_tensor(
         shape=faulty_shape,
         spatial_class=spatial_class,
         spatial_class_params=pattern_params,
-        spatial_pattern=pattern_params.get("error_pattern"),
-        domain_classes_counts= {
-            clz: temp_dom_class_count[i].item()
-            for i, clz in enumerate(DomainClass)
-        },
-        corrupted_channels_count=len(set(x.C for x in sparse_diff)),
+        value_classes_counts= value_class_count,
+        corrupted_channels_count=len(faulty_channels),
         corrupted_values_count=len(sparse_diff),
+        domain_class=domain_class,
+        golden_range_min=golden_range_min,
+        golden_range_max=golden_range_max,
         layout=args.layout,
         metadata=metadata
     )

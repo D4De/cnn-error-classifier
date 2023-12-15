@@ -94,6 +94,17 @@ class Args:
     Store experiment data in a sqlite database file
     """
 
+    classes_category_absolute_cutoff : int
+    """
+    
+    """
+
+    classes_category_relative_cutoff : float
+    """
+    """
+
+    visualize_limit : int
+
     @classmethod
     def from_argparse(cls, args: Namespace) -> Args:
         """
@@ -119,6 +130,9 @@ class Args:
             reports_path=os.path.join(args.output_dir, "reports"),
             parallel=args.parallel,
             database=args.database,
+            classes_category_absolute_cutoff=5,
+            classes_category_relative_cutoff=0.01,     
+            visualize_limit=args.visualize_limit        
         )
 
 
@@ -197,6 +211,13 @@ def create_parser() -> ArgumentParser:
         "--database",
         action="store_true",
         help="Store results in a sqlite database",
+    )
+    parser.add_argument(
+        "-vl",
+        "--visualize-limit",
+        type=int,
+        default=0,
+        help="Maximum number of visualized tensors per folder"
     )
     tensor_format_group = parser.add_mutually_exclusive_group()
     tensor_format_group.add_argument(

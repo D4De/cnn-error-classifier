@@ -40,4 +40,4 @@ def template_pattern(
     if ...:
         return True, {"error_pattern": ..., "MAX": ...}
     else:
-        return False, {}
+        return None

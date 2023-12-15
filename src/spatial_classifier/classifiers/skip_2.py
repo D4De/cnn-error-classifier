@@ -1,15 +1,16 @@
 from collections import defaultdict
 from operator import itemgetter
-from typing import Dict, Iterable, Tuple
+from typing import Dict, Iterable, Tuple, Optional
 
 from coordinates import Coordinates, raveled_channel_index
-
+from spatial_classifier.spatial_class import SpatialClass
+from spatial_classifier.spatial_class_parameters import SpatialClassParameters
 
 def skip_2_pattern(
     sparse_diff: Iterable[Coordinates],
     shape: Coordinates,
     corr_channels: Iterable[int],
-) -> Tuple[bool, Dict[str, any]]:
+) -> Optional[SpatialClassParameters]:
     """
     Return True if a Skip4 pattern is identified
 
@@ -57,4 +58,4 @@ def skip_2_pattern(
             "MAX": [max_c_offset, max_idx_offset],
         }
     else:
-        return False, {}
+        return None

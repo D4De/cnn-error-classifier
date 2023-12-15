@@ -1,123 +1,248 @@
-from collections import OrderedDict, defaultdict
-from functools import reduce
+from collections import defaultdict
 import json
+from operator import itemgetter
 import os
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, Iterable, List, Literal
+from domain_classifier import ValueClass
 
-from aggregators import count_by, group_by
+from utils import sort_dict
 from analyzed_tensor import AnalyzedTensor
 from args import Args
-from domain_classifier import DomainClass
-from spatial_classifier import accumulate_max, to_classes_id
-from utils import sort_dict
+from utils import group_by
+import collections.abc
 
-
-def generate_classes_models_old(results : Iterable[AnalyzedTensor], args : Args):
+def generate_classes_models(results : Iterable[AnalyzedTensor], args: Args):
     """
-    Calculates and create the three files containing the CLASSES framework model
+    Generate a json file containing that can be used by the CLASSES framework
+    to simulate the errors.
 
-    results
+    Parameters
     ---
-    List of all the analyzed experimental results (AnalyzedTensor)
+    results : Iterable[AnalyzedTensor]
+        Result of the analysis for each corrupted tensor.
+    args : Args
+        Object containing all the user preferences supplied by the command line arguments
 
-    args
+    Returns
     ---
-    The Args object containing all the program options, used for getting the output folder
+    None. A json file named "{args.classes[0]}_{args.classes[1]}.json" will be created in the result folder
+
+    Raises
+    ---
+    FileNotFoundError: If the folder where the file is written does not exist
+
     """
-    cardinalities, spatial_models = calculate_classes_cardinalities_and_spatial(results)
-    value_analysis = calculate_value_analysis(results)
-    save_classes_models(cardinalities, spatial_models, value_analysis, args)
+    tensor_by_sp_class = group_by(results, key=lambda x: x.spatial_class)
 
-def save_classes_models(cardinality_model_json : dict, spatial_model_json : dict, value_analisys_txt : str, args : Args):
+    classes_model = {
+        "_tensor_count_pre_pruning": len(results)
+    }
+
+    for sp_class, tensors in tensor_by_sp_class.items():
+        parameter_list, categories_count = generate_parameter_list(tensors, len(results))
+        classes_model[sp_class.display_name()] = {
+            "count": len(tensors),
+            "frequency": len(tensors) / len(results),
+            "categories_count": categories_count,
+            "domain_classes": generate_domain_class_freq(tensors, len(tensors) / len(results)),
+            "parameters": parameter_list
+        }
+
+
+    classes_model = prune_classes_model(classes_model, args)
+
     classes_output_dir = os.path.join(
         args.output_dir, f"{args.classes[0]}_{args.classes[1]}"
     )
+
     if not os.path.exists(classes_output_dir):
         os.mkdir(classes_output_dir)
+
+    with open(os.path.join(classes_output_dir, f"{args.classes[0]}_{args.classes[1]}.json"), 'w') as f:
+        json.dump(classes_model, f, indent=3)
     
-    with open(os.path.join(classes_output_dir, "value_analysis.txt"), "w") as f:
-        f.write(value_analisys_txt)
-    
-    with open(
-        os.path.join(
-            classes_output_dir,
-            f"{args.classes[0]}_{args.classes[1]}_spatial_model.json",
-        ),
-        "w",
-    ) as f:
-        f.write(json.dumps(spatial_model_json, indent=2))
-    
-    with open(
-        os.path.join(
-            classes_output_dir,
-            f"{args.classes[1]}_{args.classes[0]}_anomalies_count.json",
-        ),
-        "w",
-    ) as f:
-        f.write(json.dumps(cardinality_model_json, indent=2))
 
-def calculate_classes_cardinalities_and_spatial(results : Iterable[AnalyzedTensor]) -> Tuple[Dict[int, list], Dict[int, Dict[str, Dict[str, float]]]]:
-    total_count = len(results)
-    # Dictionary containing all the conts 
-    cardinalities = count_by(results, key=lambda x: x.corrupted_values_count)    
-    classes_cardinalities_json = {cardinality : [count, count / total_count] for cardinality, count in cardinalities.items()} 
+def prune_classes_model(classes_model : Dict[str, dict], args: Args):
+    pruned_classes_model = {}
+    updated_tensor_count = 0
+    updated_category_count = 0
+    for sp_class, sp_class_dict in classes_model.items():
 
-    results_by_cardinality = group_by(results, key=lambda x: x.corrupted_values_count)
-    # Maximum threshold for relative frequencies inside the patterns
-    # All the patterns that have a relative frequency lower than that will be considered random
-    RANDOM_THRESHOLD = 0.05
-
-    classes_spatial_json : Dict[int, Dict[str, Dict[str, float]]] = OrderedDict()
-
-    for cardinality, cardinality_results in results_by_cardinality.items():
-        if cardinality == 1:
-            classes_spatial_json[1] = {"RANDOM": 1.0}
+        if sp_class.startswith("_"):
             continue
 
-        cardinality_total_count = cardinalities[cardinality]
-        results_by_sp_class = group_by(cardinality_results, key=lambda x: x.spatial_class)
-        # Key: Spatial Class ID, Value: Relative Frequqncy of the spatial class given the current cardinality
-        ff_spatial_json = OrderedDict()
-        # Key: Spatial Class ID, Value: A dictionary
-        # The sub-dictionary contains
-        # Keys: The spatial pattern (parameters of the pattern) or "RANDOM" or "MAX"
-        # Values: Relative frequency of the spatial pattern given the current cardinality and the spatial pattern
-        pf_spatial_json = OrderedDict()
-        for sp_class, sp_class_results in results_by_sp_class.items():
-            # Get the key of the FF/PF dicts: The id of the spatial pattern used in CLASSES
-            sp_class_classes_id = to_classes_id(sp_class.display_name())
-            # Set the relative frequency of the pattern
-            ff_spatial_json[sp_class_classes_id] = len(sp_class_results) / cardinality_total_count
-            # Number of tensors that have the current cardinality and current spatial class
-            sp_pattern_total_count = len(sp_class_results)
-            # Count the number of occurence of each pattern
-            sp_pattern_counts = count_by(sp_class_results, key=lambda x: x.spatial_pattern)
-            sp_pattern_counts_classes = {str(pattern) : count / sp_pattern_total_count for pattern, count in sp_pattern_counts.items() if count / sp_pattern_total_count >= RANDOM_THRESHOLD}
-            # Count the number of patterns that fall into the wildcard category "RANDOM" (relative frequency < RANDOM_THRESHOLD)
-            random_counts = sum(count for count in sp_pattern_counts.values() if count / sp_pattern_total_count < RANDOM_THRESHOLD)
+        sp_class_count = 0
+        old_tensor_count = sp_class_dict["count"]
 
-            sp_class_results_max = [x.spatial_class_params.get("MAX", []) for x in sp_class_results]
-            sp_class_results_max = [x if isinstance(x, list) else [x] for x in sp_class_results_max]
-            # Calculate the "MAX" vector, useful for generating "RANDOM" patterns inside CLASSES
-            max_vector = reduce(accumulate_max, sp_class_results_max)
-            sp_pattern_counts_classes = sp_pattern_counts_classes | {"MAX": max_vector, "RANDOM": random_counts / sp_pattern_total_count}
+        if old_tensor_count < args.classes_category_absolute_cutoff:
+            continue
 
-            pf_spatial_json[sp_class_classes_id] = sp_pattern_counts_classes
+        big_categories = [param for param in sp_class_dict["parameters"] if param["overall_frequency"] >= args.classes_category_relative_cutoff]
+        big_categories_count = sum(cat["count"] for cat in big_categories)
+        updated_tensor_count += big_categories_count
+        sp_class_count += big_categories_count
+
+        cutoff_categories = [param for param in sp_class_dict["parameters"] if param["overall_frequency"] < args.classes_category_relative_cutoff]
         
-        classes_spatial_json[str(cardinality)] = {"FF": ff_spatial_json, "PF": pf_spatial_json}
-    return sort_dict(classes_cardinalities_json, sort_key=lambda k: int(k[0])), sort_dict(classes_spatial_json, sort_key=lambda k: int(k[0]))
+        new_categories = big_categories
+
+        if len(cutoff_categories) >= 1:
+            merged_cat = merge_categories(cutoff_categories)
+            if merged_cat["count"] >= args.classes_category_absolute_cutoff:
+                updated_tensor_count += merged_cat["count"]
+                sp_class_count += merged_cat["count"]
+                updated_category_count += 1
+                new_categories.append(merged_cat)
+
+        pruned_classes_model[sp_class] = {
+            "count": sp_class_count,
+            "frequency": None,
+            "categories_count": len(new_categories),
+            "domain_classes": sp_class_dict["domain_classes"],
+            "parameters": new_categories
+        }
+    
+    redone_classes_model = {}
+    redone_classes_model["_rejected_tensors_proportion"] = 1 - (updated_tensor_count / classes_model["_tensor_count_pre_pruning"])
+    redone_classes_model["_tensor_count"] = updated_tensor_count
+    redone_classes_model["_categories_count"] = updated_category_count
+
+    for sp_class, sp_class_dict in pruned_classes_model.items():
+        if sp_class.startswith("_"):
+            continue
+        redone_classes_model[sp_class] = sp_class_dict
+        redone_classes_model[sp_class]["frequency"] = redone_classes_model[sp_class]["count"] / updated_tensor_count
+        parameters = redone_classes_model[sp_class]["parameters"]
+        for category in parameters:
+            category["conditional_frequency"] = category["count"] / sp_class_dict["count"]
+            category["overall_frequency"] = category["count"] / updated_tensor_count
+    
+    return redone_classes_model
 
 
+def merge_categories(categories : List[Dict[str, Any]]) -> Dict[str, Any]:
+    if len(categories) == 1:
+        return categories[0]
+    
+    if len(categories) < 1:
+        raise ValueError("Categories argument list should have at least one argument")
 
-def calculate_value_analysis(results : Iterable[AnalyzedTensor]) -> str:
-    counts : defaultdict[DomainClass, int] = defaultdict(int)
-    corrupted_values = 0
-    for result in results:
-        for dom_class, count in result.domain_classes_counts.items():
-            if dom_class == DomainClass.SAME or dom_class == DomainClass.ALMOST_SAME:
+    merged_keys = merge_parameters_dict(categories, "keys")
+
+    merged_stats = merge_parameters_dict(categories, "stats")
+
+
+    unified_cat = {
+        "keys": merged_keys,
+        "stats": merged_stats,
+        "conditional_frequency": None,
+        "overall_frequency": None,
+        "count": sum(cat["count"] for cat in categories)
+    }
+    return unified_cat
+
+
+def merge_parameters_dict(categories : List[Dict[str, Any]], param_key : Literal["keys", "stats"]):
+    
+    merged_dict = {}
+    
+    for key in categories[0][param_key].keys():
+        possible_values = []
+        for category in categories:
+            value = category[param_key][key]
+            if isinstance(value, dict):
+                if "RANDOM" in value:
+                    possible_values += value["RANDOM"]
+                else:
+                    raise ValueError("A dict as parameter value is accepted only when contains 'RANDOM' key" ) 
+            else:
+                possible_values.append(value)
+            
+        unique_values = list(set(possible_values))
+        if len(unique_values) == 1:
+            merged_dict[key] = unique_values[0]
+        elif len(unique_values) > 1:
+            merged_dict[key] = {"RANDOM": unique_values}
+        else:
+            raise ValueError("Inconsistent State: There must be some value in the unique_value list")
+
+    return merged_dict
+
+def generate_parameter_list(sp_class_results : Iterable[AnalyzedTensor], total_analyzed_tensor_count : int):
+    def make_hashable_key_value_pairs(t : AnalyzedTensor):
+        hashable_key = tuple(sorted(t.spatial_class_params.keys.items(), key=itemgetter(0)))
+        return hashable_key
+
+    tensor_by_parameters = group_by(sp_class_results, key=make_hashable_key_value_pairs)
+    parameters_category_count = len(tensor_by_parameters)
+    total_sp_class_items = len(sp_class_results)
+    parameters_list : List[Dict[str, Any]] = []
+    for analyzed_tensors in tensor_by_parameters.values():
+        stats_dict = defaultdict(list)
+        for aggregated_key, value in analyzed_tensors[0].spatial_class_params.stats.items():
+            if not isinstance(value, collections.abc.Sized):
+                raise ValueError(f"Spatial class classifier for {analyzed_tensors[0].spatial_class.display_name()} is malformed: values of SpatialClassParameter.stats dict must be a (<value>, <aggregator>) tuple")
+            _, aggregator = value
+            aggr_keys = []
+            for tensor in analyzed_tensors:
+                aggr_keys.append(tensor.spatial_class_params.stats[aggregated_key][0])
+            stats_dict[aggregated_key] = aggregator(*aggr_keys)
+
+        param_dict = {
+            "keys": analyzed_tensors[0].spatial_class_params.keys,
+            "stats": stats_dict,
+            "conditional_frequency": len(analyzed_tensors) / total_sp_class_items,
+            "overall_frequency": len(analyzed_tensors) / total_analyzed_tensor_count,
+            "count": len(analyzed_tensors)
+        }
+        parameters_list.append(param_dict)
+
+    return sorted(parameters_list, key= lambda x: x["count"], reverse=True), parameters_category_count
+
+def generate_domain_class_freq(sp_class_results : Iterable[AnalyzedTensor], sp_class_freq : float):
+    def dom_classes_hashable_keys(t : AnalyzedTensor):
+        hashable_key = tuple(sorted(t.domain_class.items(), key=itemgetter(0)))
+        return hashable_key
+    tensors_count_by_dom_class = group_by(sp_class_results, key=dom_classes_hashable_keys)
+    random_count = 0
+    dom_classes = []
+    for tensors_in_dom_class in tensors_count_by_dom_class.values():
+        if len(tensors_in_dom_class) == 0:
+            continue
+        dom_class = tensors_in_dom_class[0].domain_class
+        dom_class_count = len(tensors_in_dom_class)
+        dom_class_rel_freq = dom_class_count / len(sp_class_results)
+        if dom_class_rel_freq * sp_class_freq < 0.01 or dom_class_count < 5 or "random" in dom_class:
+            random_count += dom_class_count
+        else:
+            sorted_dom_class = sort_dict(dom_class, sort_key=lambda x: x[1][0], reverse=True)
+            dom_classes.append({
+                **sorted_dom_class,
+                "count": dom_class_count,
+                "frequency": dom_class_rel_freq
+            })
+    dom_classes = sorted(dom_classes, key=lambda x: x["frequency"], reverse=True)
+    if random_count > 0:
+
+        values_distribution = value_class_distribution(sp_class_results)
+
+        dom_classes.append({
+            "random": (100.0, 100.0),
+            "count": random_count,
+            "values": values_distribution,
+            "frequency": random_count / len(sp_class_results)       
+        })
+
+    return dom_classes
+
+
+def value_class_distribution(sp_class_results : Iterable[AnalyzedTensor]) -> Dict[str, float]:
+    value_classes_counts : defaultdict[str, int] = defaultdict(int)
+    total_count = 0
+    for cl in sp_class_results:
+        for val_class, cnt in cl.value_classes_counts.items():
+            if val_class == ValueClass.SAME:
                 continue
-            counts[dom_class] += count
-            corrupted_values += count
-    counts = {clz : cnt / corrupted_values for clz, cnt in counts.items()}
-    values_txt = f'There have been {corrupted_values} faults\n[-1, 1]: {counts[DomainClass.OFF_BY_ONE]}\nOthers: {counts[DomainClass.RANDOM]}\nNan: {counts[DomainClass.NAN]}\nZeros: {counts[DomainClass.ZERO]}\nValid: 1.00000' 
-    return values_txt
+            value_classes_counts[val_class.display_name()] += cnt
+            total_count += cnt
+    return {val_class : cnt / total_count for val_class, cnt in value_classes_counts.items()}

@@ -1,5 +1,6 @@
 from collections import OrderedDict, defaultdict
-from typing import Any, Callable, Dict, Tuple, TypeVar
+import math
+from typing import Any, Callable, Dict, Iterable, List, Tuple, TypeVar
 
 
 def int_defaultdict() -> defaultdict[Any, int]:
@@ -42,3 +43,34 @@ def sort_dict(
             [(key, value) for key, value in data.items()], key=sort_key, reverse=reverse
         )
     )
+
+T = TypeVar("T")
+S = TypeVar("S")
+
+
+def group_by(results : Iterable[S], key : Callable[[S],T]) -> Dict[T, List[S]]:
+    """
+    Takes an Iterable of a type S and a grouping function that maps an object of type S to its group, represented by a variable of type T.
+    Returns  
+    """
+    groups : defaultdict[T, List[S]] = defaultdict(list)
+
+    for result in results:
+        groups[key(result)].append(result)
+
+    return groups
+
+
+def count_by(results : Iterable[S], key : Callable[[S],T], count_funct : Callable[[S], int] = lambda x: 1) -> Dict[T, int]:
+    counts : defaultdict[T, int] = defaultdict(int)
+
+    for result in results:
+        counts[key(result)] += count_funct(result)
+
+    return counts
+
+def quantize_percentage(proportion : float, quantization_levels : int = 10) -> Tuple[float, float]:
+    step = 100 / quantization_levels
+    top_value = float(min(math.ceil(proportion * quantization_levels) * step, 100))
+    bot_value = float(max(0, top_value - step))
+    return (bot_value, top_value)
