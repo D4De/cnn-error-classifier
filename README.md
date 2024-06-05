@@ -110,6 +110,34 @@ where the arguments are the following
 * `<output_folder>` is the path to the output folder to store the analysis results. This folder doesn't need to exist. The tool will automatically check and create it if needed.
 This program also supports options that can be enabled with suitable flags.
 
+### Example run
+
+Download an example input for the classifier from ![https://drive.google.com/file/d/1AmlXO1z1st3iWFk9Q-tYqsFoNV4pEwXP/view?usp=sharing](here).
+
+Unzip it using the command :
+```
+tar xzvf batch_conv_3_with_igprofile.tar.gz 
+```
+
+Then execute:
+```
+cd src
+```
+
+```
+python main.py ../tests_2023-04-16_11-00-25 test/output_1.npy test ../output_test --classes conv gemm
+```
+
+
+This command:
+Executes the classifier reading from the extracted test folder with the nvbitfi resuts.
+
+It reads relatively from each test folder (conv_1, conv_2, ...):
+* the golden output: ``test/output_1.npy``  
+* the folder where corrupted output subfolders (fp32_wrv, gp_wrv) are located: ``test``
+
+And outputs in the test folder generating also the classes models. 
+
 ### Options
 The following options can be activated through specific flags
 * #### **Data format**
@@ -120,7 +148,7 @@ The following options can be activated through specific flags
 * #### **Parallelism**
     To speed up the execution of the tool, it is possible to enable multiprocessing. To do so, use the flag `-p N`, which will spawn `N` threads working in parallel. 
 * #### **CLASSES Models**
-    The goal of performing fault injections is to create error models that CLASSES can use. This tool can make the required JSON files during the analysis to aid this process. To enable this process, use the flag `--classes Sx Operator`, where Sx is the number of the experiment, and Operator is the name of the currently analyzed operator. I.e., if you are creating the 4th model for the convolution, use the flag `--classes S4 Conv`.
+    The goal of performing fault injections is to create error models that CLASSES can use. This tool can make the required JSON files during the analysis to aid this process. To enable this process, use the flag `--classes Sx Operator`, where Sx is the number of the experiment, and Operator is the name of the currently analyzed operator. I.e., if you are creating the 4th model for the convolution, use the flag `--classes S4 Conv`. NOTE: This naming convention is deprecated, but two string arguments after `--classes` are still required. You do not have to follow striclty the naming convention. If the flag is `--classes A B` the file will be named `A_B.json`.
 * #### **Epsilon**
     By default, this classifier considers an error in each value that differs from the golden version by a value greater than 1e-3. Using the flag `-eps VAL`, we can specify a different threshold for the classifier. 
 * #### **Partial reports**
