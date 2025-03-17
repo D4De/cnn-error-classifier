@@ -112,7 +112,7 @@ This program also supports options that can be enabled with suitable flags.
 
 ### Example run
 
-Download an example input for the classifier from ![here](https://miele.faculty.polimi.it/batch_conv_3_with_igprofile.tar.gz).
+Download an example input for the classifier from [here](https://miele.faculty.polimi.it/batch_conv_3_with_igprofile.tar.gz).
 
 Unzip it using the command :
 ```
