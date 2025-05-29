@@ -18,7 +18,8 @@ def analyze_tensor_directory(
     faulty_files_path = [
         os.path.join(faulty_path, entry)
         for entry in os.listdir(faulty_path)
-        if entry.split(".")[1] == "npy"
+        if os.path.splitext(entry)[1] == '.npy'
+        # if entry.split(".")[1] == "npy"
     ]
 
     log.info(f"Found {len(faulty_files_path)} faulty tensors to analize")

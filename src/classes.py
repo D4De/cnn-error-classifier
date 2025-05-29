@@ -48,7 +48,6 @@ def generate_classes_models(results : Iterable[AnalyzedTensor], args: Args):
             "parameters": parameter_list
         }
 
-
     classes_model = prune_classes_model(classes_model, args)
 
     classes_output_dir = os.path.join(

@@ -1,24 +1,23 @@
+import os
+import json
+import sys
+import traceback
+import logging as log
+
 from functools import partial
 from multiprocessing import Manager, Pool, Process, Queue
 from queue import Empty
 from typing import Dict, List, Tuple
-import logging as log
 from collections import OrderedDict
-import os
 from tqdm import tqdm
-import json
-import sys
+
 from aggregators import cardinalities_counts, cardinalities_counts_by_sp_class, experiment_counts, spatial_classes_counts, tensor_count_by_shape, tensor_count_by_sub_batch
 from analyzed_tensor import AnalyzedTensor
 from args import Args, create_parser
-from batch_analyzer import analyze_batch
-import numpy as np
+from batch_analyzer_nvdla import analyze_batch
 from classes import generate_classes_models
 from db import create_db, delete_db, put_experiment_data
-import traceback
-
-REPORT_FILE = "report.json"
-TOP_PATTERNS_PCT = 5
+from utils import read_npz_sizes
 
 from spatial_classifier.spatial_classifier import (
     clear_spatial_classification_folders,
@@ -35,65 +34,40 @@ def setup_logging():
 
     handler = log.StreamHandler(sys.stdout)
     handler.setLevel(log.DEBUG)
-    formatter = log.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    formatter = log.Formatter("%(levelname)s - %(message)s")
     handler.setFormatter(formatter)
     root.addHandler(handler)
 
 
 def precalculate_workload(
-    batch_paths: List[str], faulty_path: str, golden_path: str
-) -> Tuple[int, int, Dict[str, int]]:
+    hw_unit_paths: List[str], errors_filename: str = 'errors.npz'
+) -> Tuple[int, Dict[str, int]]:
     """
-    Calculate the number of tensors to analyze in the subdirectories. Returns a tuple containing the number of tensors in all
-    batches, the number of values inside all faulty tensors (obtaining summing the .size attribute of all tensors) and a dict
-    that contains the number of tensors for each batch
-
-    batch_paths
-    ---
-    Paths to the batchs to analyze
-
-    faulty_path
-    ---
-    Relative path from all the batches' home folders to the folders that contains the sub batches of faulty values
-
-    golden_path
-    ---
-    Relative path from all the batches' home folders to the golden .npy file
+    Calculate the number of tensors to analyze in the subdirectories. Returns a tuple containing the total number of tensors in all
+    subdirectories and a dict that contains the number of tensors for each one.
     """
-    tensors = 0
-    values = 0
-    batch_sizes = {}
-    # Iterate for each batch
-    for batch_path in batch_paths:
-        batch_values_count = 0
-        batch_tensors_count = 0
-        path_to_golden = os.path.join(batch_path, golden_path)
-        golden_size = np.load(path_to_golden).size
+    if not errors_filename.endswith('.npz'):
+        errors_filename = errors_filename + '.npz'
 
-        faulty_dir_path = os.path.join(batch_path, faulty_path)
-        # Detect sub batches inside the batches
-        sub_batch_dirs = [
-            os.path.join(faulty_dir_path, dir)
-            for dir in os.listdir(faulty_dir_path)
-            if os.path.isdir(os.path.join(faulty_dir_path, dir))
-        ]
-        for sub_batch_path in sub_batch_dirs:
-            # Count tensors inside the sub batch
-            sub_batch_tensor_count = len(
-                [
-                    os.path.join(sub_batch_path, entry)
-                    for entry in os.listdir(sub_batch_path)
-                    if os.path.splitext(entry)[1] == '.npy'
-                    # if entry.split(".")[1] == "npy"
-                ]
-            )
-            sub_batch_value_count = sub_batch_tensor_count * golden_size
-            batch_tensors_count += sub_batch_tensor_count
-            tensors += sub_batch_tensor_count
-            values += sub_batch_value_count
-            batch_values_count += sub_batch_value_count
-        batch_sizes[batch_path] = batch_tensors_count
-    return tensors, values, batch_sizes
+    total_tensors = 0
+    sizes = {}
+
+    for unit_path in hw_unit_paths:
+        num_tensors = 0
+
+        path_to_errors = os.path.join(unit_path, errors_filename)
+
+        for tensor_shape in read_npz_sizes(path_to_errors):
+            # tensor_shape here is a 5-uple with this interpretation: (num_injections, num_batches, num_channels, width, height)
+            # so, the amount of "single" output tensors for each file in the npz archive is injection_number * batch_number
+            num_tensors += (tensor_shape[0] * tensor_shape[1])
+
+        log.info(f'\t{unit_path}: found {num_tensors} tensors to analyze')
+
+        sizes[unit_path] = num_tensors
+        total_tensors += num_tensors
+
+    return total_tensors, sizes
 
 
 def progress_handler(queue: Queue, work: int):
@@ -130,25 +104,29 @@ def main():
     args = Args.from_argparse(argparse_args)
 
     setup_logging()
-    # Get all the tests batches paths (a batch is a folder inside the root path)
-    test_batches_paths = [
-        os.path.join(args.root_path, dir)
-        for dir in os.listdir(args.root_path)
-        if os.path.isdir(os.path.join(args.root_path, dir))
-    ]
 
-    # Slice the batches (for testing purposes)
-    if args.limit is not None:
-        test_batches_paths = test_batches_paths[: args.limit]
 
-    test_batches_paths = [
-        path
-        for path in test_batches_paths
-        if not os.path.basename(path).startswith("_")
-    ]
+    # The error batches are grouped wrt the hardware path for the injection (control or data)
+    ctrl_dir = os.path.join(args.root_path, 'ctrl')
+    data_dir = os.path.join(args.root_path, 'data')
 
-    log.info(f"Found {len(test_batches_paths)} batches to analyze")
+    hw_unit_dirs = []
 
+    if os.path.isdir(ctrl_dir):
+        log.info('Found ctrl directory')
+        hw_unit_dirs += [os.path.join(ctrl_dir, dir) for dir in os.listdir(ctrl_dir) if os.path.isdir(os.path.join(ctrl_dir, dir))]
+    else:
+        log.warning(f'Control path directory {ctrl_dir} is missing.')
+
+    if os.path.isdir(data_dir):
+        log.info('Found data directory')
+        hw_unit_dirs += [os.path.join(data_dir, dir) for dir in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, dir))]
+    else:
+        log.warning(f'Data path directory {data_dir} is missing.')
+
+    log.info(f"Found {len(hw_unit_dirs)} hardware units directories to analyze.")
+
+    # Create additional directories
     if not os.path.exists(args.output_dir):
         os.mkdir(args.output_dir)
 
@@ -165,16 +143,16 @@ def main():
         db_path = os.path.join(args.output_dir, 'experiments.sqlite')
         delete_db(db_path)
 
-    # workload == number of tensors to analyze in all batches (for progress bar)
-    n_tensors, n_values, batch_sizes = precalculate_workload(
-        test_batches_paths, args.faulty_path, args.golden_path
-    )
-    test_batches_paths = sorted(
-        test_batches_paths, key=lambda x: batch_sizes[x], reverse=True
-    )
-    log.info(f"Found {n_tensors} tensors to analyze")
+
+
+    # workload == total number of tensors to analyze (for progress bar)
+    total_tensors, unit_dirs_sizes = precalculate_workload(hw_unit_dirs)
+    hw_unit_dirs = sorted(hw_unit_dirs, key=lambda x: unit_dirs_sizes[x], reverse=True)
+    log.info(f"Found {total_tensors} total tensors to analyze")
+
     # Mute logger to avoid interferences with tqdm
     log.getLogger().setLevel(log.WARN)
+
 
     # Initialize global dictionaries
     global_report = OrderedDict()
@@ -187,13 +165,13 @@ def main():
     batch_partial = partial(analyze_batch, args=args, queue=progress_queue)
 
     progress_process = Process(
-        target=progress_handler, args=(progress_queue, n_tensors)
+        target=progress_handler, args=(progress_queue, total_tensors)
     )
     # Start the progress bar process
     progress_process.start()
     # Start the worker process
     with Pool(args.parallel) as pool:
-        result = pool.map_async(batch_partial, test_batches_paths, chunksize=1)
+        result = pool.map_async(batch_partial, hw_unit_dirs, chunksize=1)
 
         final_result = result.get()
     progress_process.join()
@@ -207,6 +185,7 @@ def main():
             tensor_list, metadata = batch_result
             analyzed_tensors += tensor_list
             metadata_dicts.append(metadata)
+    
     # Calculate cumulative metrics
     result_count = len(analyzed_tensors)
     # Generate the json files of errors models needed in the CLASSES framework (if option --classes is specified in arguments)

@@ -39,7 +39,7 @@ class SpatialClass(Enum):
         return os.path.join(output_path, self.display_name())
 
     def output_path(self, output_path, basename) -> str:
-        return os.path.join(output_path, self.display_name(), basename)
+        return os.path.join(output_path, self.display_name(), basename + '.png')
     
 
 def to_classes_id(name) -> str:

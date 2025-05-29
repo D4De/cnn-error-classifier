@@ -1,7 +1,8 @@
 from collections import OrderedDict, defaultdict
 import math
 from typing import Any, Callable, Dict, Iterable, List, Tuple, TypeVar
-
+import numpy as np
+import zipfile
 
 def int_defaultdict() -> defaultdict[Any, int]:
     return defaultdict(int)
@@ -74,3 +75,28 @@ def quantize_percentage(proportion : float, quantization_levels : int = 10) -> T
     top_value = float(min(math.ceil(proportion * quantization_levels) * step, 100))
     bot_value = float(max(0, top_value - step))
     return (bot_value, top_value)
+
+
+#--NUMPY UTILS--
+def read_npy_size(npy_path):
+    """Reads just the header of a .npy file to determine the array size."""
+    with open(npy_path, 'rb') as fobj:
+        version = np.lib.format.read_magic(fobj)
+        func_name = 'read_array_header_' + '_'.join(str(v) for v in version)
+        func = getattr(np.lib.format, func_name)
+        shape, _, _ = func(fobj)
+        return shape
+    
+def read_npz_sizes(npz_path):
+    """Reads the headers of the .npy files within a .npz archive and yields the sizes."""
+    with zipfile.ZipFile(npz_path) as archive:
+        for name in archive.namelist():
+            if not name.endswith('.npy'):
+                continue
+                
+            npy = archive.open(name)
+            version = np.lib.format.read_magic(npy)
+            func_name = 'read_array_header_' + '_'.join(str(v) for v in version)
+            func = getattr(np.lib.format, func_name)
+            shape, _, _ = func(npy)
+            yield shape

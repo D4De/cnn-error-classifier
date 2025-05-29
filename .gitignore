@@ -132,3 +132,8 @@ dmypy.json
 # data directory
 data/
 .vscode
+
+# other files
+**.npy
+**/*test*
+**/nvdla_*
