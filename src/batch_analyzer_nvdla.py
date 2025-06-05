@@ -13,6 +13,7 @@ from coordinates import map_to_coordinates, numpy_coords_to_python_coord, coordi
 from domain_classifier import ValueClass, domain_classification, value_classification
 from spatial_classifier.spatial_classifier import spatial_classification
 from visualizer import visualize
+from classes import generate_classes_models
 
 
 def analyze_batch(
@@ -77,6 +78,10 @@ def analyze_batch(
         on_tensor_completed=on_tensor_completed,
         metadata=batch_metadata
     )
+
+    # classification is done for this hardware unit; if requested, generate its model
+    if args.classes_unit_models:
+        generate_classes_models(batch_analyzed_tensors, args, batch_path)
 
     return batch_analyzed_tensors, batch_metadata
 
@@ -164,7 +169,6 @@ def analyze_error_tensor(
         value_class_count[val_class] += 1
     
     value_class_count[ValueClass.SAME] = golden.size - sum(value_class_count.values())
-        
 
     # No diff = masked
     if len(sparse_diff_native_coords) == 0:
@@ -192,7 +196,7 @@ def analyze_error_tensor(
                 ),
                 save=True,
                 show=False,
-                suptitile=f'{metadata.get("batch_name") or ""} {metadata.get("sub_batch_name") or ""} {golden_shape.C}x{golden_shape.H}x{golden_shape.W}',
+                suptitile=f'{metadata.get("batch_name") or ""} {metadata.get("sub_batch_name") or "" or error_number} {golden_shape.C}x{golden_shape.H}x{golden_shape.W}',
                 invalidate=True,
             )
         

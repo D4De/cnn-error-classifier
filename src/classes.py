@@ -11,7 +11,7 @@ from args import Args
 from utils import group_by
 import collections.abc
 
-def generate_classes_models(results : Iterable[AnalyzedTensor], args: Args):
+def generate_classes_models(results : Iterable[AnalyzedTensor], args: Args, unit_path: str = None):
     """
     Generate a json file containing that can be used by the CLASSES framework
     to simulate the errors.
@@ -22,6 +22,8 @@ def generate_classes_models(results : Iterable[AnalyzedTensor], args: Args):
         Result of the analysis for each corrupted tensor.
     args : Args
         Object containing all the user preferences supplied by the command line arguments
+    unit_path : str
+        If provided, indicates that the model to be generated is of a single hardware unit.
 
     Returns
     ---
@@ -54,10 +56,19 @@ def generate_classes_models(results : Iterable[AnalyzedTensor], args: Args):
         args.output_dir, f"{args.classes[0]}_{args.classes[1]}"
     )
 
-    if not os.path.exists(classes_output_dir):
-        os.mkdir(classes_output_dir)
+    if unit_path is None:
+        # create the model for the entire operator
+        model_filename = f"{args.classes[0]}_{args.classes[1]}.json"
+    else:
+        # create the model for a single hardware unit: get the last two components of the unit path
+        hw_group_name = os.path.basename(os.path.dirname(unit_path))
+        hw_unit_name = os.path.basename(unit_path)
+        model_filename = f'{args.classes[0]}_{args.classes[1]}_{hw_group_name}_{hw_unit_name}.json'
 
-    with open(os.path.join(classes_output_dir, f"{args.classes[0]}_{args.classes[1]}.json"), 'w') as f:
+    if not os.path.exists(classes_output_dir):
+        os.makedirs(classes_output_dir, exist_ok=True)
+
+    with open(os.path.join(classes_output_dir, model_filename), 'w') as f:
         json.dump(classes_model, f, indent=3)
     
 

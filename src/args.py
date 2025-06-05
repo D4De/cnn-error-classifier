@@ -104,6 +104,11 @@ class Args:
     """
 
     visualize_limit : int
+    
+    classes_unit_models : bool
+    """
+    If true, an error model for each NVDLA hardware unit is generated.
+    """
 
     @classmethod
     def from_argparse(cls, args: Namespace) -> Args:
@@ -132,7 +137,8 @@ class Args:
             database=args.database,
             classes_category_absolute_cutoff=5,
             classes_category_relative_cutoff=0.01,     
-            visualize_limit=args.visualize_limit        
+            visualize_limit=args.visualize_limit,
+            classes_unit_models=args.classes_unit_models
         )
 
 
@@ -229,5 +235,11 @@ def create_parser() -> ArgumentParser:
         "-nhwc",
         action="store_true",
         help="Loaded tensors are stored using NHWC dimensional order",
+    )
+    # NVDLA-specific
+    parser.add_argument(
+        "--classes-unit-models",
+        action="store_true",
+        help="Generate a small error model for each NVDLA hardware unit",
     )
     return parser
