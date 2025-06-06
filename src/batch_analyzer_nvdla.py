@@ -1,15 +1,17 @@
 import os
 import logging as log
 import numpy as np
+import json
 
 from multiprocessing import Queue
 from typing import Any, Dict, List, Tuple, Union
 from args import Args
 from typing import Callable, Optional
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 
 from analyzed_tensor import AnalyzedTensor
 from coordinates import map_to_coordinates, numpy_coords_to_python_coord, coordinates_to_tuple
+from aggregators import cardinalities_counts, cardinalities_counts_by_sp_class, experiment_counts, spatial_classes_counts, tensor_count_by_shape, tensor_count_by_sub_batch
 from domain_classifier import ValueClass, domain_classification, value_classification
 from spatial_classifier.spatial_classifier import spatial_classification
 from visualizer import visualize
@@ -79,9 +81,14 @@ def analyze_batch(
         metadata=batch_metadata
     )
 
-    # classification is done for this hardware unit; if requested, generate its model
+    # classification is done for this hardware unit; if requested, generate its model and report
     if args.classes_unit_models:
-        generate_classes_models(batch_analyzed_tensors, args, batch_path)
+        unit_dir = os.path.join(args.classes_output_dir, batch_name)
+        if not os.path.isdir(unit_dir):
+            os.makedirs(unit_dir, exist_ok=True)
+
+        generate_classes_models(batch_analyzed_tensors, args, unit_dir)
+        generate_batch_report(unit_dir, batch_analyzed_tensors)
 
     return batch_analyzed_tensors, batch_metadata
 
@@ -219,3 +226,16 @@ def analyze_error_tensor(
         layout=args.layout,
         metadata=metadata
     )
+
+
+def generate_batch_report(batch_dir: str, analyzed_tensors: list[AnalyzedTensor]):
+    report = OrderedDict()
+
+    report["classified_tensors"] = len(analyzed_tensors)
+    report["tensors_by_shape"] = tensor_count_by_shape(analyzed_tensors)
+    report["spatial_classes"] = spatial_classes_counts(analyzed_tensors)
+    report["class_cardinalites"] = cardinalities_counts_by_sp_class(analyzed_tensors)
+
+    report_path = os.path.join(batch_dir, 'unit_report.json')
+    with open(report_path, 'w') as rf:
+        json.dump(report, rf, indent=2)

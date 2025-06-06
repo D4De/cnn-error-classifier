@@ -73,6 +73,8 @@ class Args:
     If not none, the user requested to export classes error models files.
     The tuple of two elements contains the name of the classes file.
     """
+    
+    classes_output_dir: str | None
 
     visualize_path: str
     """
@@ -131,6 +133,7 @@ class Args:
             almost_same=args.almost_same,
             partial_reports=args.partial_reports,
             classes=args.classes,
+            classes_output_dir=os.path.join(args.output_dir, 'classes') if args.classes else None,
             visualize_path=os.path.join(args.output_dir, "visualize"),
             reports_path=os.path.join(args.output_dir, "reports"),
             parallel=args.parallel,

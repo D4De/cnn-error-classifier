@@ -130,7 +130,10 @@ def main():
     if not os.path.exists(args.output_dir):
         os.mkdir(args.output_dir)
 
-    if not os.path.exists(args.reports_path):
+    if args.classes and not os.path.isdir(args.classes_output_dir):
+        os.makedirs(args.classes_output_dir, exist_ok=True)
+
+    if args.partial_reports and not os.path.exists(args.reports_path):
         os.mkdir(args.reports_path)
 
     # Folder for visualizations must be erased only if new one are generated
@@ -203,24 +206,16 @@ def main():
             traceback.print_exc(e)
 
 
-
-    total_experiments, experiments_by_types = experiment_counts(metadata_dicts)
-    global_report["total_experiments"] = total_experiments
-    global_report["experiment_by_types"] = experiments_by_types
-    global_report["tensors_by_sub_batch"] = tensor_count_by_sub_batch(analyzed_tensors)
-    global_report["tensors_by_shape"] = tensor_count_by_shape(analyzed_tensors)
     global_report["classified_tensors"] = result_count
+    global_report["tensors_by_shape"] = tensor_count_by_shape(analyzed_tensors)
     global_report["spatial_classes"] = spatial_classes_counts(analyzed_tensors)
     #global_report["domain_classes_types_per_tensor"] = domain_classes_types_counts(analyzed_tensors)
     #global_report["domain_classes_types_per_sp_class"] = domain_class_type_per_spatial_class(analyzed_tensors)
     #global_report["domain_classes_counts"] = domain_classes_counts(analyzed_tensors)
-    global_report["cardinalities"] = cardinalities_counts(analyzed_tensors)
     global_report["class_cardinalites"] = cardinalities_counts_by_sp_class(analyzed_tensors)
 
-
-    with open(os.path.join(args.output_dir, "global_report.json"), "w") as f:
-        f.writelines(json.dumps(global_report, indent=2))
-    
+    with open(os.path.join(args.output_dir, "global_report.json"), "w") as rf:
+        json.dump(global_report, rf, indent=2)
 
 
 if __name__ == "__main__":
