@@ -11,7 +11,7 @@ from typing import Dict, List, Tuple
 from collections import OrderedDict
 from tqdm import tqdm
 
-from aggregators import cardinalities_counts, cardinalities_counts_by_sp_class, experiment_counts, spatial_classes_counts, tensor_count_by_shape, tensor_count_by_sub_batch
+from aggregators import cardinalities_counts_by_sp_class, spatial_classes_counts, tensor_count_by_shape
 from analyzed_tensor import AnalyzedTensor
 from args import Args, create_parser
 from batch_analyzer_nvdla import analyze_batch
@@ -27,7 +27,7 @@ from spatial_classifier.spatial_classifier import (
 
 def setup_logging():
     """
-    Configure logger for printing in the console
+    Configure logger for printing to the console.
     """
     root = log.getLogger()
     root.setLevel(log.INFO)
@@ -43,7 +43,7 @@ def precalculate_workload(
     hw_unit_paths: List[str], errors_filename: str = 'errors.npz'
 ) -> Tuple[int, Dict[str, int]]:
     """
-    Calculate the number of tensors to analyze in the subdirectories. Returns a tuple containing the total number of tensors in all
+    Calculates the number of tensors to analyze in the subdirectories. Returns a tuple containing the total number of tensors in all
     subdirectories and a dict that contains the number of tensors for each one.
     """
     if not errors_filename.endswith('.npz'):
@@ -58,7 +58,7 @@ def precalculate_workload(
         path_to_errors = os.path.join(unit_path, errors_filename)
 
         for tensor_shape in read_npz_sizes(path_to_errors):
-            # tensor_shape here is a 5-uple with this interpretation: (num_injections, num_batches, num_channels, width, height)
+            # tensor_shape here is a 5-uple with this interpretation: (num_injections, num_batches, num_channels, height, width)
             # so, the amount of "single" output tensors for each file in the npz archive is injection_number * batch_number
             num_tensors += (tensor_shape[0] * tensor_shape[1])
 
@@ -73,9 +73,8 @@ def precalculate_workload(
 def progress_handler(queue: Queue, work: int):
     """
     A process that updates the progress bar.
-    The working threads send a "processed" message to the this thread, using the queue, whenever they complete processing a tensor.
-    The responsibility of this process is to update the progress bar when a "processed" is received
-
+    The working threads send a "processed" message to this thread, using the queue, whenever they complete processing a tensor.
+    The responsibility of this process is to update the progress bar when a "processed" is received.
     """
     with tqdm(total=work) as pbar:
         work_count = 0
@@ -128,13 +127,13 @@ def main():
 
     # Create additional directories
     if not os.path.exists(args.output_dir):
-        os.mkdir(args.output_dir)
+        os.makedirs(args.output_dir, exist_ok=True)
 
     if args.classes and not os.path.isdir(args.classes_output_dir):
         os.makedirs(args.classes_output_dir, exist_ok=True)
 
     if args.partial_reports and not os.path.exists(args.reports_path):
-        os.mkdir(args.reports_path)
+        os.makedirs(args.reports_path, exist_ok=True)
 
     # Folder for visualizations must be erased only if new one are generated
     if args.visualize:
@@ -145,7 +144,6 @@ def main():
     if args.database:
         db_path = os.path.join(args.output_dir, 'experiments.sqlite')
         delete_db(db_path)
-
 
 
     # workload == total number of tensors to analyze (for progress bar)

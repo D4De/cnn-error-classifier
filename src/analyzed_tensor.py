@@ -15,6 +15,7 @@ from spatial_classifier.spatial_classifier import SpatialClass
 class AnalyzedTensor:
     batch : str
     sub_batch : str
+    injection_number: int
     file_name : str
     file_path : str
     shape : Coordinates
@@ -39,6 +40,7 @@ class AnalyzedTensor:
         return {
             "batch_name": self.batch,
             "sub_batch_name": self.sub_batch,
+            "injection_number": self.injection_number,
             "file_name": self.file_name,
             "file_path": self.file_path,
             "igid": self.metadata.get("igid"),

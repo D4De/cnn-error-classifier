@@ -2,6 +2,7 @@ import os
 import logging as log
 import numpy as np
 import json
+import csv
 
 from multiprocessing import Queue
 from typing import Any, Dict, List, Tuple, Union
@@ -11,9 +12,10 @@ from collections import defaultdict, OrderedDict
 
 from analyzed_tensor import AnalyzedTensor
 from coordinates import map_to_coordinates, numpy_coords_to_python_coord, coordinates_to_tuple
-from aggregators import cardinalities_counts, cardinalities_counts_by_sp_class, experiment_counts, spatial_classes_counts, tensor_count_by_shape, tensor_count_by_sub_batch
+from aggregators import cardinalities_counts_by_sp_class, spatial_classes_counts, tensor_count_by_shape
 from domain_classifier import ValueClass, domain_classification, value_classification
 from spatial_classifier.spatial_classifier import spatial_classification
+from spatial_classifier.spatial_class import SpatialClass
 from visualizer import visualize
 from classes import generate_classes_models
 
@@ -57,7 +59,7 @@ def analyze_batch(
     errors_path = os.path.join(batch_path, args.faulty_path)
 
     if not os.path.exists(errors_path):
-        log.warning(f"Skipping {batch_name} batch. Could not open errors archive.")
+        log.warning(f"Skipping {batch_name} batch. Errors archive not found.")
         return None
             
 
@@ -89,6 +91,7 @@ def analyze_batch(
 
         generate_classes_models(batch_analyzed_tensors, args, unit_dir)
         generate_batch_report(unit_dir, batch_analyzed_tensors)
+        report_uncategorized_tensors(unit_dir, batch_analyzed_tensors)
 
     return batch_analyzed_tensors, batch_metadata
 
@@ -113,11 +116,12 @@ def analyze_errors_archive(
     for error_number, error in errors_archive.items():
         golden_tensor = golden[int(error_number)]
         # each file is a 5D tensor: iterate twice to get a single tensor
-        for injection in error:
+        for injection_number, injection in enumerate(error):
             for error_tensor in injection:
                 sp_class, result = analyze_error_tensor(
                     errors_path=errors_path,
                     error_number=error_number,
+                    injection_number=injection_number,
                     tensor=error_tensor[np.newaxis, :], #reshape to 4D
                     golden=golden_tensor[np.newaxis, :], #reshape to 4D
                     args=args,
@@ -142,6 +146,7 @@ def analyze_errors_archive(
 def analyze_error_tensor(
     errors_path: str,
     error_number: str,
+    injection_number: int,
     tensor: np.ndarray,
     golden: np.ndarray,
     golden_range_min: float,
@@ -156,7 +161,7 @@ def analyze_error_tensor(
     # Check shape correctness
     if error_shape != golden_shape:
         log.warning(
-            f"Skipping {errors_path} number {error_number}. Invalid shape (Faulty has shape: {error_shape}, Golden has shape: {golden_shape})"
+            f"Skipping {errors_path} number {error_number} injection {injection_number}. Invalid shape (Faulty has shape: {error_shape}, Golden has shape: {golden_shape})"
         )
         return "skipped", None
 
@@ -179,7 +184,7 @@ def analyze_error_tensor(
 
     # No diff = masked
     if len(sparse_diff_native_coords) == 0:
-        log.info(f"{errors_path} number {error_number} has no diffs with golden")
+        log.info(f"{errors_path} number {error_number} injection {injection_number} has no diffs with golden")
         return "masked", None
     sparse_diff = [
         map_to_coordinates(numpy_coords_to_python_coord(coords), args.layout)
@@ -199,7 +204,7 @@ def analyze_error_tensor(
                 faulty_channels,
                 args.layout,
                 spatial_class.output_path(
-                    args.visualize_path, f'{metadata["batch_name"]}_{error_number}'
+                    args.visualize_path, f'{metadata["batch_name"]}_{error_number}_{injection_number}'
                 ),
                 save=True,
                 show=False,
@@ -212,6 +217,7 @@ def analyze_error_tensor(
     return spatial_class.display_name(), AnalyzedTensor(
         batch=metadata["batch_name"],
         sub_batch=error_number,
+        injection_number=injection_number,
         file_name=os.path.basename(errors_path),
         file_path=errors_path,
         shape=error_shape,
@@ -239,3 +245,17 @@ def generate_batch_report(batch_dir: str, analyzed_tensors: list[AnalyzedTensor]
     report_path = os.path.join(batch_dir, 'unit_report.json')
     with open(report_path, 'w') as rf:
         json.dump(report, rf, indent=2)
+
+
+def report_uncategorized_tensors(batch_dir: str, analyzed_tensors: list[AnalyzedTensor]):
+    report_path = os.path.join(batch_dir, 'uncategorized_log.csv')
+
+    with open(report_path, 'w', newline='') as csvlog:
+        logwriter = csv.writer(csvlog)
+        logwriter.writerow(['Type', 'Error Number', 'Injection Number'])
+
+        for tensor in analyzed_tensors:
+            if tensor.spatial_class == SpatialClass.SINGLE_CHANNEL_RANDOM:
+                logwriter.writerow(['Single', tensor.sub_batch, str(tensor.injection_number)])
+            elif tensor.spatial_class == SpatialClass.MULTIPLE_CHANNELS_UNCATEGORIZED:
+                logwriter.writerow(['Multiple', tensor.sub_batch, str(tensor.injection_number)])
