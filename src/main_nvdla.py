@@ -1,23 +1,24 @@
 import os
-import json
 import sys
+import json
 import traceback
 import logging as log
 
-from functools import partial
-from multiprocessing import Manager, Pool, Process, Queue
+from tqdm import tqdm
 from queue import Empty
 from typing import Dict, List, Tuple
+from functools import partial
+from statistics import mean, stdev
 from collections import OrderedDict
-from tqdm import tqdm
+from multiprocessing import Manager, Pool, Process, Queue
 
-from aggregators import cardinalities_counts_by_sp_class, spatial_classes_counts, tensor_count_by_shape
-from analyzed_tensor import AnalyzedTensor
-from args import Args, create_parser
-from batch_analyzer_nvdla import analyze_batch
-from classes import generate_classes_models
 from db import create_db, delete_db, put_experiment_data
+from args import Args, create_parser
 from utils import read_npz_sizes
+from classes import generate_classes_models
+from aggregators import cardinalities_counts_by_sp_class, spatial_classes_counts, tensor_count_by_shape
+from analyzed_tensor import AnalyzedTensor, AnalyzedTensorFC
+from batch_analyzer_nvdla import analyze_batch
 
 from spatial_classifier.spatial_classifier import (
     clear_spatial_classification_folders,
@@ -177,7 +178,7 @@ def main():
         final_result = result.get()
     progress_process.join()
 
-    analyzed_tensors : List[AnalyzedTensor]= []
+    analyzed_tensors = []
     metadata_dicts = []
 
 
@@ -189,28 +190,69 @@ def main():
     
     # Calculate cumulative metrics
     result_count = len(analyzed_tensors)
-    # Generate the json files of errors models needed in the CLASSES framework (if option --classes is specified in arguments)
-    if args.classes is not None and result_count > 0:
-        generate_classes_models(analyzed_tensors, args)
-    
-    if args.database:
-        db_path = os.path.join(args.output_dir, 'experiments.sqlite')
-        try:
-            create_db(db_path)
-            put_experiment_data(db_path, analyzed_tensors)
-            log.info(f"Saved experiments in {db_path}")
-        except Exception as e:
-            log.error(f"Exception {e} happened while saving to the db")
-            traceback.print_exc(e)
+
+    # determine what to produce based on the type of analyzed operator
+    result_type = type(analyzed_tensors[0])
+
+    # CONVOLUTIONAL LAYER
+    if result_type == AnalyzedTensor:
+        # Generate the json files of errors models needed in the CLASSES framework (if option --classes is specified in arguments)
+        if args.classes is not None and result_count > 0:
+            generate_classes_models(analyzed_tensors, args)
+        
+        if args.database:
+            db_path = os.path.join(args.output_dir, 'experiments.sqlite')
+            try:
+                create_db(db_path)
+                put_experiment_data(db_path, analyzed_tensors)
+                log.info(f"Saved experiments in {db_path}")
+            except Exception as e:
+                log.error(f"Exception {e} happened while saving to the db")
+                traceback.print_exc(e)
 
 
-    global_report["classified_tensors"] = result_count
-    global_report["tensors_by_shape"] = tensor_count_by_shape(analyzed_tensors)
-    global_report["spatial_classes"] = spatial_classes_counts(analyzed_tensors)
-    #global_report["domain_classes_types_per_tensor"] = domain_classes_types_counts(analyzed_tensors)
-    #global_report["domain_classes_types_per_sp_class"] = domain_class_type_per_spatial_class(analyzed_tensors)
-    #global_report["domain_classes_counts"] = domain_classes_counts(analyzed_tensors)
-    global_report["class_cardinalites"] = cardinalities_counts_by_sp_class(analyzed_tensors)
+        global_report["classified_tensors"] = result_count
+        global_report["tensors_by_shape"] = tensor_count_by_shape(analyzed_tensors)
+        global_report["spatial_classes"] = spatial_classes_counts(analyzed_tensors)
+        global_report["class_cardinalites"] = cardinalities_counts_by_sp_class(analyzed_tensors)
+
+    # FULLY CONNECTED LAYER
+    elif result_type == AnalyzedTensorFC:
+        global_report["classified_tensors"] = result_count
+        global_report["tensor_shape"] = analyzed_tensors[0].shape
+
+        # determine min, max, avg and std. dev. of number of corrupted values, L1 distance and L2 distance
+        corrupted_values_counts = []
+        L1_distances = []
+        L2_distances = []
+
+        for tensor in analyzed_tensors:
+            corrupted_values_counts.append(tensor.corrupted_values_count)
+            L1_distances.append(tensor.L1_distance)
+            L2_distances.append(tensor.L2_distance)
+
+        global_report["num_corrupted_values"] = {
+            "min": min(corrupted_values_counts),
+            "max": max(corrupted_values_counts),
+            "mean": mean(corrupted_values_counts),
+            "stdev": stdev(corrupted_values_counts)
+        }
+        global_report["L1_distance"] = {
+            "min": min(L1_distances),
+            "max": max(L1_distances),
+            "mean": mean(L1_distances),
+            "stdev": stdev(L1_distances)
+        }
+        global_report["L2_distance"] = {
+            "min": min(L2_distances),
+            "max": max(L2_distances),
+            "mean": mean(L2_distances),
+            "stdev": stdev(L2_distances)
+        }
+
+    else:
+        raise TypeError(f"Results are of unknown type {result_type}")
+
 
     with open(os.path.join(args.output_dir, "global_report.json"), "w") as rf:
         json.dump(global_report, rf, indent=2)

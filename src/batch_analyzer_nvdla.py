@@ -9,8 +9,9 @@ from typing import Any, Dict, List, Tuple, Union
 from args import Args
 from typing import Callable, Optional
 from collections import defaultdict, OrderedDict
+from statistics import mean, stdev
 
-from analyzed_tensor import AnalyzedTensor
+from analyzed_tensor import AnalyzedTensor, AnalyzedTensorFC
 from coordinates import map_to_coordinates, numpy_coords_to_python_coord, coordinates_to_tuple
 from aggregators import cardinalities_counts_by_sp_class, spatial_classes_counts, tensor_count_by_shape
 from domain_classifier import ValueClass, domain_classification, value_classification
@@ -22,7 +23,7 @@ from classes import generate_classes_models
 
 def analyze_batch(
     batch_path: str, args: Args, queue: Union[Queue, None]
-) -> Union[Tuple[List[AnalyzedTensor], Dict[str, Any]], None]:
+) -> Tuple[List[AnalyzedTensor], Dict[str, Any]] | Tuple[List[AnalyzedTensorFC], Dict[str, Any]] | None:
     """
     Analyze a single batch of tensors.
     This function processes a batch independently from the others, returning a list of results (AnalyzedTensors)
@@ -33,29 +34,7 @@ def analyze_batch(
     topdir_name = os.path.basename(os.path.dirname(batch_path))
     batch_name = topdir_name + '_' + os.path.basename(batch_path)
 
-    # No golden found
-    if not os.path.exists(golden_path):
-        log.error(
-            f"Skipping {batch_name} since it does not contain a golden file."
-        )
-        return None
-
-    # Load golden file for the batch
-    try:
-        golden: np.ndarray = np.load(golden_path)
-    except:
-        log.error(f"Skipping {batch_name} batch. Could not read golden file.")
-        return None
-
-    if golden is not None and len(golden.shape) != 4:
-        log.error(
-            f"Skipping {batch_name} batch. Dimension of golden not supported: {golden.shape}."
-        )
-        return None
-
-    log.info(f"Golden tensor ({args.golden_path}) loaded. Shape {golden.shape}.")
-
-    # Absolute path to faulty tensors archive
+    # check if the errors archive exists
     errors_path = os.path.join(batch_path, args.faulty_path)
 
     if not os.path.exists(errors_path):
@@ -63,38 +42,89 @@ def analyze_batch(
         return None
             
 
-    # If there is a queue specified prepare the lambda for signalling to the progress bar process that a tensor was processed
+    # if there is a queue specified prepare the lambda for signalling to the progress bar process that a tensor was processed
     if queue is not None:
         on_tensor_completed = lambda: queue.put(("processed", 1), block=False)
     else:
         on_tensor_completed = None
 
-    # Prepare metadata and start analysis
+
+    # check if the golden file exists
+    if not os.path.exists(golden_path):
+        log.error(
+            f"Skipping {batch_name} since it does not contain a golden file."
+        )
+        return None
+
+    # load golden file for the batch
+    try:
+        golden: np.ndarray = np.load(golden_path)
+    except:
+        log.error(f"Skipping {batch_name} batch. Could not read golden file.")
+        return None
+
+    if golden is None:
+        log.error(f'Skipping {batch_name} batch. Golden file is malformed or empty.')
+        return None
+    
+
+    # prepare metadata for the analysis
     batch_metadata = {
         "shape": golden.shape,
         "batch_name": batch_name
     }
 
-    batch_analyzed_tensors = analyze_errors_archive(
-        errors_path,
-        golden,
-        args,
-        on_tensor_completed=on_tensor_completed,
-        metadata=batch_metadata
-    )
 
-    # classification is done for this hardware unit; if requested, generate its model and report
-    if args.classes_unit_models:
-        unit_dir = os.path.join(args.classes_output_dir, batch_name)
-        if not os.path.isdir(unit_dir):
-            os.makedirs(unit_dir, exist_ok=True)
+    # determine type of layer according to golden shape
+    if len(golden.shape) == 4:
+        log.info(f'{batch_name} batch: golden is 4D, assuming layer is convolutional.')
 
-        generate_classes_models(batch_analyzed_tensors, args, unit_dir)
-        generate_batch_report(unit_dir, batch_analyzed_tensors)
-        report_uncategorized_tensors(unit_dir, batch_analyzed_tensors)
+        batch_analyzed_tensors = analyze_errors_archive(
+            errors_path,
+            golden,
+            args,
+            on_tensor_completed=on_tensor_completed,
+            metadata=batch_metadata
+        )
+
+        # classification is done for this hardware unit; if requested, generate its model and report
+        if args.classes_unit_models:
+            unit_dir = os.path.join(args.classes_output_dir, batch_name)
+            if not os.path.isdir(unit_dir):
+                os.makedirs(unit_dir, exist_ok=True)
+
+            generate_classes_models(batch_analyzed_tensors, args, unit_dir)
+            generate_batch_report(unit_dir, batch_analyzed_tensors)
+            report_uncategorized_tensors(unit_dir, batch_analyzed_tensors)
+    
+
+    elif len(golden.shape) == 2:
+        log.info(f'{batch_name} batch: golden is 2D, assuming layer is fully connected.')
+
+        batch_analyzed_tensors = analyze_errors_archive_fc(
+            errors_path,
+            golden,
+            args,
+            on_tensor_completed=on_tensor_completed,
+            metadata=batch_metadata
+        )
+
+        # classification is done for this hardware unit; if requested, generate its report
+        if args.classes_unit_models:
+            unit_dir = os.path.join(args.classes_output_dir, batch_name)
+            if not os.path.isdir(unit_dir):
+                os.makedirs(unit_dir, exist_ok=True)
+
+            generate_batch_report_fc(unit_dir, batch_analyzed_tensors)
+
+
+    else:
+        log.error(f"Skipping {batch_name} batch. Dimension of golden not supported: {golden.shape}.")
+        return None 
 
     return batch_analyzed_tensors, batch_metadata
 
+# ARCHIVE ANALYSIS ---------------------------------------------------------------------------------------------------
 
 def analyze_errors_archive(
         errors_path: str,
@@ -142,6 +172,53 @@ def analyze_errors_archive(
     
     return results
 
+def analyze_errors_archive_fc(
+    errors_path: str,
+    golden: np.ndarray,
+    args: Args,
+    on_tensor_completed: Union[Callable[[], None], None] = None,
+    metadata: dict = {}
+):
+    results: List[AnalyzedTensorFC] = []
+    classified_tensors = 0
+
+    golden_range_min = float(np.min(golden))
+    golden_range_max = float(np.max(golden))
+
+    # load the npz archive
+    errors_archive = np.load(errors_path)
+
+    # iterate over the files in the archive
+    for error_number, error in errors_archive.items():
+        golden_tensor = golden[int(error_number)]
+        # each file is a 3D tensor: iterate twice to get a 1D tensor for comparison
+        for injection_number, injection in enumerate(error):
+            for error_tensor in injection:
+                result = analyze_error_tensor_fc(
+                    errors_path=errors_path,
+                    error_number=error_number,
+                    injection_number=injection_number,
+                    tensor=error_tensor,
+                    golden=golden_tensor,
+                    golden_range_min=golden_range_min,
+                    golden_range_max=golden_range_max,
+                    args=args,
+                    metadata=metadata
+                )
+
+                if on_tensor_completed is not None:
+                    on_tensor_completed()
+                
+                if result is not None:
+                    classified_tensors += 1
+                    results.append(result)
+
+    if classified_tensors == 0:
+        log.warning(f"No tensors were classified in {errors_path}")
+    
+    return results
+
+# SINGLE TENSOR ANALYSIS ---------------------------------------------------------------------------------------------
 
 def analyze_error_tensor(
     errors_path: str,
@@ -233,6 +310,48 @@ def analyze_error_tensor(
         metadata=metadata
     )
 
+def analyze_error_tensor_fc(
+    errors_path: str,
+    error_number: str,
+    injection_number: int,
+    tensor: np.ndarray,
+    golden: np.ndarray,
+    golden_range_min: float,
+    golden_range_max: float,
+    args: Args,
+    metadata: dict = {},
+):
+    # Check shape correctness
+    if tensor.shape != golden.shape:
+        log.warning(
+            f"Skipping {errors_path} number {error_number} injection {injection_number}. Invalid shape (Faulty has shape: {tensor.shape}, Golden has shape: {golden.shape})"
+        )
+        return None
+ 
+    num_equal_elements = np.sum(tensor == golden)
+    num_different_elements = tensor.size - num_equal_elements
+
+    L1_dist = np.linalg.norm(tensor-golden, 1)
+    L2_dist = np.linalg.norm(tensor-golden)
+
+    # Per tensor report generator
+    return AnalyzedTensorFC(
+        batch=metadata["batch_name"],
+        sub_batch=error_number,
+        injection_number=injection_number,
+        file_name=os.path.basename(errors_path),
+        file_path=errors_path,
+        shape=tensor.shape,
+        corrupted_values_count=num_different_elements,
+        golden_range_min=golden_range_min,
+        golden_range_max=golden_range_max,
+        layout=args.layout,
+        metadata=metadata,
+        L1_distance=L1_dist,
+        L2_distance=L2_dist
+    )
+
+# REPORT GENERATION ---------------------------------------------------------------------------------------------------
 
 def generate_batch_report(batch_dir: str, analyzed_tensors: list[AnalyzedTensor]):
     report = OrderedDict()
@@ -259,3 +378,43 @@ def report_uncategorized_tensors(batch_dir: str, analyzed_tensors: list[Analyzed
                 logwriter.writerow(['Single', tensor.sub_batch, str(tensor.injection_number)])
             elif tensor.spatial_class == SpatialClass.MULTIPLE_CHANNELS_UNCATEGORIZED:
                 logwriter.writerow(['Multiple', tensor.sub_batch, str(tensor.injection_number)])
+
+
+def generate_batch_report_fc(batch_dir: str, analyzed_tensors: List[AnalyzedTensorFC]):
+    report = OrderedDict()
+
+    report["classified_tensors"] = len(analyzed_tensors)
+    report["tensor_shape"] = analyzed_tensors[0].shape
+
+    # determine min, max, avg and std. dev. of number of corrupted values, L1 distance and L2 distance
+    corrupted_values_counts = []
+    L1_distances = []
+    L2_distances = []
+
+    for tensor in analyzed_tensors:
+        corrupted_values_counts.append(tensor.corrupted_values_count)
+        L1_distances.append(tensor.L1_distance)
+        L2_distances.append(tensor.L2_distance)
+
+    report["num_corrupted_values"] = {
+        "min": min(corrupted_values_counts),
+        "max": max(corrupted_values_counts),
+        "mean": mean(corrupted_values_counts),
+        "stdev": stdev(corrupted_values_counts)
+    }
+    report["L1_distance"] = {
+        "min": min(L1_distances),
+        "max": max(L1_distances),
+        "mean": mean(L1_distances),
+        "stdev": stdev(L1_distances)
+    }
+    report["L2_distance"] = {
+        "min": min(L2_distances),
+        "max": max(L2_distances),
+        "mean": mean(L2_distances),
+        "stdev": stdev(L2_distances)
+    }
+
+    report_path = os.path.join(batch_dir, 'unit_report.json')
+    with open(report_path, 'w') as rf:
+        json.dump(report, rf, indent=2)

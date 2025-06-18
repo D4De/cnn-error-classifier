@@ -1,6 +1,3 @@
-
-
-
 from dataclasses import dataclass
 import json
 from typing import Any, Dict, List, Tuple
@@ -57,6 +54,42 @@ class AnalyzedTensor:
             "domain_class": json.dumps(self.domain_class),
             "corrupted_values_count": self.corrupted_values_count,
             "corrupted_channels_count": self.corrupted_channels_count,
+            "layout": self.layout.name,
+            "metadata": json.dumps(self.metadata)
+        }
+
+
+@dataclass
+class AnalyzedTensorFC:
+    batch : str
+    sub_batch : str
+    injection_number: int
+    file_name : str
+    file_path : str
+    shape : Coordinates
+    golden_range_min : float
+    golden_range_max : float
+    corrupted_values_count : int
+    layout : TensorLayout
+    metadata : Dict[str, Any]
+    L1_distance: float
+    L2_distance: float
+
+
+    def as_insert_param_list(self) -> Dict[str, Any]:
+        return {
+            "batch_name": self.batch,
+            "sub_batch_name": self.sub_batch,
+            "injection_number": self.injection_number,
+            "file_name": self.file_name,
+            "file_path": self.file_path,
+            "N": self.shape.N,
+            "H": self.shape.H,
+            "C": self.shape.C,
+            "W": self.shape.W,
+            "golden_range_min": self.golden_range_min,
+            "golden_range_max" : self.golden_range_max,
+            "corrupted_values_count": self.corrupted_values_count,
             "layout": self.layout.name,
             "metadata": json.dumps(self.metadata)
         }
