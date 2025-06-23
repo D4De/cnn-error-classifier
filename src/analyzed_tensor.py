@@ -74,6 +74,7 @@ class AnalyzedTensorFC:
     metadata : Dict[str, Any]
     L1_distance: float
     L2_distance: float
+    misclassified: bool = False # only used for the last fc layer
 
 
     def as_insert_param_list(self) -> Dict[str, Any]:

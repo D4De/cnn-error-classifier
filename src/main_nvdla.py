@@ -225,11 +225,13 @@ def main():
         corrupted_values_counts = []
         L1_distances = []
         L2_distances = []
+        num_misclassifications = 0
 
         for tensor in analyzed_tensors:
             corrupted_values_counts.append(tensor.corrupted_values_count)
             L1_distances.append(tensor.L1_distance)
             L2_distances.append(tensor.L2_distance)
+            num_misclassifications += tensor.misclassified
 
         global_report["num_corrupted_values"] = {
             "min": min(corrupted_values_counts),
@@ -249,6 +251,9 @@ def main():
             "mean": mean(L2_distances),
             "stdev": stdev(L2_distances)
         }
+
+        if args.last_fc:
+            global_report["misclassification_rate"] = num_misclassifications / result_count
 
     else:
         raise TypeError(f"Results are of unknown type {result_type}")

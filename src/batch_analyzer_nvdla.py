@@ -115,7 +115,7 @@ def analyze_batch(
             if not os.path.isdir(unit_dir):
                 os.makedirs(unit_dir, exist_ok=True)
 
-            generate_batch_report_fc(unit_dir, batch_analyzed_tensors)
+            generate_batch_report_fc(unit_dir, batch_analyzed_tensors, args.last_fc)
 
 
     else:
@@ -334,8 +334,7 @@ def analyze_error_tensor_fc(
     L1_dist = np.linalg.norm(tensor-golden, 1)
     L2_dist = np.linalg.norm(tensor-golden)
 
-    # Per tensor report generator
-    return AnalyzedTensorFC(
+    result_tensor = AnalyzedTensorFC(
         batch=metadata["batch_name"],
         sub_batch=error_number,
         injection_number=injection_number,
@@ -350,6 +349,14 @@ def analyze_error_tensor_fc(
         L1_distance=L1_dist,
         L2_distance=L2_dist
     )
+
+    if args.last_fc:
+        # this is the last fc layer: check the ranking
+        output_class = np.argmax(tensor)
+        golden_class = np.argmax(golden)
+        result_tensor.misclassified = (output_class != golden_class)
+
+    return result_tensor
 
 # REPORT GENERATION ---------------------------------------------------------------------------------------------------
 
@@ -380,21 +387,25 @@ def report_uncategorized_tensors(batch_dir: str, analyzed_tensors: list[Analyzed
                 logwriter.writerow(['Multiple', tensor.sub_batch, str(tensor.injection_number)])
 
 
-def generate_batch_report_fc(batch_dir: str, analyzed_tensors: List[AnalyzedTensorFC]):
+def generate_batch_report_fc(batch_dir: str, analyzed_tensors: List[AnalyzedTensorFC], last_fc: bool = False):
     report = OrderedDict()
 
-    report["classified_tensors"] = len(analyzed_tensors)
+    num_tensors = len(analyzed_tensors)
+    report["classified_tensors"] = num_tensors
     report["tensor_shape"] = analyzed_tensors[0].shape
 
     # determine min, max, avg and std. dev. of number of corrupted values, L1 distance and L2 distance
     corrupted_values_counts = []
     L1_distances = []
     L2_distances = []
+    # count misclassification (unused if this is not the final layer)
+    num_misclassifications = 0
 
     for tensor in analyzed_tensors:
         corrupted_values_counts.append(tensor.corrupted_values_count)
         L1_distances.append(tensor.L1_distance)
         L2_distances.append(tensor.L2_distance)
+        num_misclassifications += tensor.misclassified
 
     report["num_corrupted_values"] = {
         "min": min(corrupted_values_counts),
@@ -414,6 +425,9 @@ def generate_batch_report_fc(batch_dir: str, analyzed_tensors: List[AnalyzedTens
         "mean": mean(L2_distances),
         "stdev": stdev(L2_distances)
     }
+
+    if last_fc:
+        report["misclassification_rate"] = num_misclassifications / num_tensors
 
     report_path = os.path.join(batch_dir, 'unit_report.json')
     with open(report_path, 'w') as rf:

@@ -112,6 +112,12 @@ class Args:
     If true, an error model for each NVDLA hardware unit is generated.
     """
 
+    last_fc: bool
+    """
+    If true, the layer being analyzed is the classification head of the network: additional checks on the final
+    ranking are performed.
+    """
+
     @classmethod
     def from_argparse(cls, args: Namespace) -> Args:
         """
@@ -141,7 +147,8 @@ class Args:
             classes_category_absolute_cutoff=5,
             classes_category_relative_cutoff=0.01,     
             visualize_limit=args.visualize_limit,
-            classes_unit_models=args.classes_unit_models
+            classes_unit_models=args.classes_unit_models,
+            last_fc=args.last_fc
         )
 
 
@@ -245,4 +252,10 @@ def create_parser() -> ArgumentParser:
         action="store_true",
         help="Generate a small error model for each NVDLA hardware unit",
     )
+    parser.add_argument(
+        "--last-fc",
+        action="store_true",
+        help="Treat the layer as the final fc one and do additional ranking checks",
+    )
+
     return parser
