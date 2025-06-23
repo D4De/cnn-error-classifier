@@ -6,12 +6,12 @@ from typing import Any, Dict, Iterable, List, Literal
 from domain_classifier import ValueClass
 
 from utils import sort_dict
-from analyzed_tensor import AnalyzedTensor
+from analyzed_tensor import AnalyzedTensorConv
 from args import Args
 from utils import group_by
 import collections.abc
 
-def generate_classes_models(results : Iterable[AnalyzedTensor], args: Args, unit_path: str = None):
+def generate_classes_models(results : Iterable[AnalyzedTensorConv], args: Args, unit_path: str = None):
     """
     Generate a json file containing that can be used by the CLASSES framework
     to simulate the errors.
@@ -169,8 +169,8 @@ def merge_parameters_dict(categories : List[Dict[str, Any]], param_key : Literal
 
     return merged_dict
 
-def generate_parameter_list(sp_class_results : Iterable[AnalyzedTensor], total_analyzed_tensor_count : int):
-    def make_hashable_key_value_pairs(t : AnalyzedTensor):
+def generate_parameter_list(sp_class_results : Iterable[AnalyzedTensorConv], total_analyzed_tensor_count : int):
+    def make_hashable_key_value_pairs(t : AnalyzedTensorConv):
         hashable_key = tuple(sorted(t.spatial_class_params.keys.items(), key=itemgetter(0)))
         return hashable_key
 
@@ -200,8 +200,8 @@ def generate_parameter_list(sp_class_results : Iterable[AnalyzedTensor], total_a
 
     return sorted(parameters_list, key= lambda x: x["count"], reverse=True), parameters_category_count
 
-def generate_domain_class_freq(sp_class_results : Iterable[AnalyzedTensor], sp_class_freq : float):
-    def dom_classes_hashable_keys(t : AnalyzedTensor):
+def generate_domain_class_freq(sp_class_results : Iterable[AnalyzedTensorConv], sp_class_freq : float):
+    def dom_classes_hashable_keys(t : AnalyzedTensorConv):
         hashable_key = tuple(sorted(t.domain_class.items(), key=itemgetter(0)))
         return hashable_key
     tensors_count_by_dom_class = group_by(sp_class_results, key=dom_classes_hashable_keys)
@@ -237,7 +237,7 @@ def generate_domain_class_freq(sp_class_results : Iterable[AnalyzedTensor], sp_c
     return dom_classes
 
 
-def value_class_distribution(sp_class_results : Iterable[AnalyzedTensor]) -> Dict[str, float]:
+def value_class_distribution(sp_class_results : Iterable[AnalyzedTensorConv]) -> Dict[str, float]:
     value_classes_counts : defaultdict[str, int] = defaultdict(int)
     total_count = 0
     for cl in sp_class_results:

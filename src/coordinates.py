@@ -2,7 +2,7 @@ from collections import namedtuple
 from typing import Iterable, Tuple, Union
 
 
-Coordinates = namedtuple("Coordinates", ["N", "H", "W", "C"])
+Coordinates = namedtuple("Coordinates", ["H", "W", "C"])
 
 from enum import Enum
 
@@ -10,9 +10,6 @@ from enum import Enum
 class TensorLayout(Enum):
     NHWC = 0
     NCHW = 1
-
-    def N_index(self):
-        return self.name.index("N")
 
     def H_index(self):
         return self.name.index("H")
@@ -25,15 +22,15 @@ class TensorLayout(Enum):
 
 
 LAYOUTS = {
-    TensorLayout.NHWC: Coordinates(0, 1, 2, 3),
-    TensorLayout.NCHW: Coordinates(0, 2, 3, 1),
+    TensorLayout.NHWC: Coordinates(0, 1, 2),
+    TensorLayout.NCHW: Coordinates(2, 0, 1),
 }
 
 def coordinates_to_tuple(coords: Coordinates, layout = TensorLayout.NCHW) -> tuple:
     return tuple(coords._asdict()[k] for k in layout.name)
 
 def map_to_coordinates(
-    native_coord: Tuple[int, int, int, int], layout: TensorLayout
+    native_coord: Tuple[int, int, int], layout: TensorLayout = TensorLayout.NCHW
 ) -> Coordinates:
     """
     Transform a tuple containing 4 int values to a Coordinates object. The transformation is done accordingly to the layout specified in

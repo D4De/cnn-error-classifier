@@ -1,147 +1,112 @@
 from __future__ import annotations
+import os
 from argparse import ArgumentParser, Namespace
 from dataclasses import dataclass
-import os
-from typing import Tuple, Union
-from coordinates import TensorLayout
 
 
 @dataclass
 class Args:
     """
-    Typed holder of arguments received from command line and parsed using argparse
+    Typed holder of arguments received from command line.
     """
 
-    layout: TensorLayout
-    """
-    Holds how the tensor is structured
-    """
-
-    epsilon: float
-    """
-    The maximum difference, in absolute values, after which two
-    numbers are considered different
-    """
-
+    # Required
     root_path: str
     """
-    The path where all the fault injection experiments batches folders are
-    stored
-    """
-
-    golden_path: str
-    """
-    The relative path from the test batch folder to the golden tensor of the batch
-    """
-
-    faulty_path: str
-    """
-    The relative path from the test batch folder to faulty tensor folders
+    Path to the folder storing the results of an injection campaign for a single network layer.
     """
 
     output_dir: str
     """
-    The absolute path where the output files of this program are stored
+    Path to the output folder for the analysis. The folder does not need to exist.
     """
 
-    limit: Union[int, None]
+    # Optional
+    epsilon: float
     """
-    The maximum number of test batches to analyze
+    Two numbers are considered actually different if they differ by at least this value.
+    Default is 1e-3.
+    """
+
+    golden_path: str
+    """
+    Relative path to the golden file from the root path. Default is 'golden.npy'. If a different file name
+    was used, specify it with this.
+    """
+
+    errors_archive_filename: str
+    """
+    Each hardware unit directory should contain an 'errors.npz' archive containing the corrupted tensors.
+    If a different file name was used, specify it with this.
     """
 
     visualize: bool
     """
-    If true, the user requested to generate and save images for
-    visualizing the errors
+    If true, visualizations of the error spatial patterns are generated. Default is false.
     """
 
     almost_same: bool
     """
-    If true, the "ALMOST_SAME" domain class is enabled. All erroneus values
+    If true, the "ALMOST_SAME" domain class is enabled. All erroneous values
     of which the absolute value difference with the respective golden value is less
     than epsilon will be classified as "ALMOST_SAME". If false "ALMOST_SAME" class
-    is collapsed with "SAME" (no error)
+    is collapsed with "SAME" (no error).
+    Default is false.
     """
 
-    partial_reports: bool
+    classes: str | None
     """
-    If true, the reports for each sub_batch will be generated
-    """
-
-    classes: Union[Tuple[str, str], None]
-    """
-    If not none, the user requested to export classes error models files.
-    The tuple of two elements contains the name of the classes file.
+    If not None, the CLASSES error models are generated. The value of this parameter is
+    used as the name for the overall model.
     """
     
-    classes_output_dir: str | None
-
-    visualize_path: str
-    """
-    The path where the visualizations of the errors will be saved (if visualize is true)
-    """
-
-    reports_path: str
-    """
-    The path where the partial reports will be saved (if partial_report is true)
-    """
-
     parallel: int
     """
-    The number of parallel processes
+    Number of threads to spawn for the analysis. Default is 1.
     """
 
     database: bool
     """
-    Store experiment data in a sqlite database file
-    """
-
-    classes_category_absolute_cutoff : int
-    """
-    
-    """
-
-    classes_category_relative_cutoff : float
-    """
+    Store experiment data in a sqlite database file. Default is false.
     """
 
     visualize_limit : int
+    """
+    Maximum amount of error visualizations to generate for each hardware unit.
+    Default is 0, meaning no limit.
+    """
+
+    # Derived or preconfigured
+    classes_output_dir: str | None
+
+    visualize_path: str | None
+
+    classes_category_absolute_cutoff : int
+
+    classes_category_relative_cutoff : float
     
-    classes_unit_models : bool
-    """
-    If true, an error model for each NVDLA hardware unit is generated.
-    """
 
     @classmethod
     def from_argparse(cls, args: Namespace) -> Args:
         """
-        Generate an instance of Args from the argument parsed by argparse
+        Generate an instance of Args from the arguments parsed by argparse.
         """
-        if args.nhwc:
-            tensor_layout = TensorLayout.NHWC
-        else:
-            tensor_layout = TensorLayout.NCHW
         return Args(
-            tensor_layout,
             epsilon=args.epsilon,
-            root_path=args.root_path,
+            root_path=os.path.realpath(args.root_path),
             golden_path=args.golden_path,
-            faulty_path=args.faulty_path,
-            output_dir=args.output_dir,
-            limit=args.limit,
+            errors_archive_filename=args.errors_archive_filename,
+            output_dir=os.path.realpath(args.output_dir),
             visualize=args.visualize,
             almost_same=args.almost_same,
-            partial_reports=args.partial_reports,
             classes=args.classes,
-            classes_output_dir=os.path.join(args.output_dir, 'classes') if args.classes else None,
-            visualize_path=os.path.join(args.output_dir, "visualize"),
-            reports_path=os.path.join(args.output_dir, "reports"),
             parallel=args.parallel,
             database=args.database,
-            classes_category_absolute_cutoff=5,
-            classes_category_relative_cutoff=0.01,     
             visualize_limit=args.visualize_limit,
-            classes_unit_models=args.classes_unit_models
+            classes_output_dir=os.path.join(args.output_dir, 'classes') if args.classes else None,
+            visualize_path=os.path.join(args.output_dir, "visualize") if args.visualize else None,
+            classes_category_absolute_cutoff=5,
+            classes_category_relative_cutoff=0.01,
         )
 
 
@@ -150,35 +115,37 @@ def create_parser() -> ArgumentParser:
     Sets up an argparse.ArgumentParser instance
     """
     parser = ArgumentParser(
-        prog="Tensor Error Classifier",
-        description="Compares Faulty Tensors with a golden one, and classifies them",
+        prog="main_nvdla.py",
+        description="Compares the faulty tensors obtained from an injection campaign with the golden tensor and classifies them, producing " \
+            "error models for CLASSES.",
     )
     parser.add_argument(
-        "root_path", help="A path to the root folder of the test results"
+        "root_path",
+        help="A path to the root folder of the test results for one operator."
     )
     parser.add_argument(
-        "golden_path",
-        help="A relative path that reaches the golden file from the test batch home folder",
+        "output_dir",
+        help="Path to the output directory. The directory does not need to exist."
+    )
+
+    parser.add_argument(
+        "--golden_path",
+        help="A relative path to the golden file from the root path.",
+        required=False,
+        default='golden.npy'
     )
     parser.add_argument(
-        "faulty_path",
-        help="A relative path that reaches the folders containing faulty files from the test batch home folder",
+        "--errors_archive_filename",
+        help="Name of the errors archive within each hardware unit directory.",
+        required=False,
+        default='errors.npz'
     )
-    parser.add_argument(
-        "output_dir", help="Path where to write the ouput of the analysis"
-    )
-    parser.add_argument(
-        "-l",
-        "--limit",
-        type=int,
-        help="Limit the number of tensor to process",
-        metavar="N",
-    )
+
     parser.add_argument(
         "-p",
         "--parallel",
         type=int,
-        help="Use N parallel processes",
+        help="Use N parallel threads.",
         metavar="N",
         default=1,
     )
@@ -186,63 +153,42 @@ def create_parser() -> ArgumentParser:
         "-v",
         "--visualize",
         action="store_true",
-        help="Generate images that show visually the differences between tensors (overwriting the image generated before)",
+        help="Generate images showing the differences between tensors and the spatial patterns.",
     )
 
     parser.add_argument(
         "-as",
         "--almost-same",
         action="store_true",
-        help="Include in the plot the values that are very close to golden value (< EPS)",
+        help="Include in the plot the values that are very close to golden value (< EPS).",
     )
     parser.add_argument(
         "-eps",
         "--epsilon",
         type=float,
         default=1e-3,
-        help="Set epsilon value. Differences below epsilon are treated as almost same value and are not plotted (unless -as is enabled)",
+        help="Set epsilon value. Differences below epsilon are treated as almost same value and are not plotted (unless -as is enabled).",
     )
-    parser.add_argument(
-        "-pr",
-        "--partial-reports",
-        action="store_true",
-        help="Generate partial reports",
-    )
+
     parser.add_argument(
         "--classes",
-        nargs=2,
-        metavar=("Sx", "OPERATION"),
-        help="Generate models for classes",
+        nargs=1,
+        metavar=("MODEL_NAME"),
+        help="Generate models for CLASSES.",
     )
 
     parser.add_argument(
         "-db",
         "--database",
         action="store_true",
-        help="Store results in a sqlite database",
+        help="Store results in a sqlite database.",
     )
     parser.add_argument(
         "-vl",
         "--visualize-limit",
         type=int,
         default=0,
-        help="Maximum number of visualized tensors per folder"
+        help="Maximum number of visualized tensors per hardware unit."
     )
-    tensor_format_group = parser.add_mutually_exclusive_group()
-    tensor_format_group.add_argument(
-        "-nchw",
-        action="store_true",
-        help="Loaded tensors are stored using NCHW dimensional order (default)",
-    )
-    tensor_format_group.add_argument(
-        "-nhwc",
-        action="store_true",
-        help="Loaded tensors are stored using NHWC dimensional order",
-    )
-    # NVDLA-specific
-    parser.add_argument(
-        "--classes-unit-models",
-        action="store_true",
-        help="Generate a small error model for each NVDLA hardware unit",
-    )
+
     return parser

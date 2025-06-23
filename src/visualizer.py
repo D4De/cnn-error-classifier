@@ -42,12 +42,12 @@ def is_square(apositiveint: int) -> bool:
 def visualize(
     tensor_diff: np.ndarray,
     faulty_channels: Iterable[int],
-    layout_type: TensorLayout,
     output_path: Union[str, None] = None,
     save: bool = False,
     show: bool = True,
     invalidate: bool = False,
     suptitile: str = "",
+    layout_type: TensorLayout = TensorLayout.NCHW
 ):
     scene_dim_x, scene_dim_y = split_two(len(faulty_channels))
 
@@ -60,9 +60,9 @@ def visualize(
 
     for i, curr_C in enumerate(faulty_channels):
         if layout_type == TensorLayout.NCHW:
-            slice_diff = tensor_diff[0, curr_C, :, :]
+            slice_diff = tensor_diff[curr_C, :, :]
         else:
-            slice_diff = tensor_diff[0, :, :, curr_C]
+            slice_diff = tensor_diff[:, :, curr_C]
         if len(faulty_channels) == 1:
             # Single Plot
             curr_axs = axs

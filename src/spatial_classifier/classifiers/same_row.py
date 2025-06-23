@@ -15,13 +15,11 @@ def same_row_pattern(
     Return True if a bullet Wake spatial distribution is recognized
     Same Row: multiple corrupted values lie in the same row (same feature map)
     """
-    first_N = sparse_diff[0].N
     first_C = sparse_diff[0].C
     first_H = sparse_diff[0].H
     for coordinates in sparse_diff:
         if (
-            coordinates.N != first_N
-            or coordinates.C != first_C
+            coordinates.C != first_C
             or coordinates.H != first_H
         ):
             return None

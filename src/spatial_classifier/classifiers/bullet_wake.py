@@ -16,13 +16,11 @@ def bullet_wake_pattern(
     Return True if a bullet Wake spatial distribution is recognized
     Bullet Wake: the same location is corrupted in all (or in multiple) feature maps
     """
-    first_N = sparse_diff[0].N
     first_W = sparse_diff[0].W
     first_H = sparse_diff[0].H
     for coordinates in sparse_diff:
         if (
-            coordinates.N != first_N
-            or coordinates.H != first_H
+            coordinates.H != first_H
             or coordinates.W != first_W
         ):
             return None

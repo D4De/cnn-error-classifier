@@ -2,7 +2,7 @@ import sqlite3
 import os
 from typing import List
 
-from analyzed_tensor import AnalyzedTensor
+from analyzed_tensor import AnalyzedTensorConv
 
 
 def execute_db_script(sql_script : str, db_path : str):
@@ -25,7 +25,7 @@ def create_db(db_path : str):
         sql_script = f.read()
     execute_db_script(sql_script, db_path)
 
-def put_experiment_data(db_path : str, results : List[AnalyzedTensor]):
+def put_experiment_data(db_path : str, results : List[AnalyzedTensorConv]):
     experiments = [exp.as_insert_param_list() for exp in results]
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
