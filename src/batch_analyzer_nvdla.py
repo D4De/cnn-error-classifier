@@ -329,10 +329,10 @@ def analyze_error_tensor_fc(
         return None
  
     num_equal_elements = np.sum(tensor == golden)
-    num_different_elements = tensor.size - num_equal_elements
+    num_different_elements = int(tensor.size - num_equal_elements)
 
-    L1_dist = np.linalg.norm(tensor-golden, 1)
-    L2_dist = np.linalg.norm(tensor-golden)
+    L1_dist = float(np.linalg.norm(tensor-golden, 1))
+    L2_dist = float(np.linalg.norm(tensor-golden))
 
     result_tensor = AnalyzedTensorFC(
         batch=metadata["batch_name"],
