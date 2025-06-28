@@ -1,9 +1,8 @@
 import json
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, Tuple
 from dataclasses import dataclass
-from coordinates import Coordinates, TensorLayout
-from domain_classifier import DomainClass, ValueClass
+from domain_classifier import ValueClass
 from spatial_classifier.spatial_classifier import SpatialClass
 from spatial_classifier.spatial_class_parameters import SpatialClassParameters
 

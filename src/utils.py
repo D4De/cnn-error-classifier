@@ -1,8 +1,10 @@
-from collections import OrderedDict, defaultdict
 import math
-from typing import Any, Callable, Dict, Iterable, List, Tuple, TypeVar
 import numpy as np
 import zipfile
+
+from typing import Any, Callable, Dict, Iterable, List, Tuple, TypeVar
+from collections import OrderedDict, defaultdict
+
 
 def int_defaultdict() -> defaultdict[Any, int]:
     return defaultdict(int)
@@ -100,3 +102,15 @@ def read_npz_sizes(npz_path):
             func = getattr(np.lib.format, func_name)
             shape, _, _ = func(npy)
             yield shape
+
+
+#--PROGRESS BAR UTILS--
+def precalculate_unit_workload(errors_archive) -> int:
+    num_tensors = 0
+
+    for key in errors_archive:
+        errors_file = errors_archive[key]
+        file_shape = errors_file.shape
+        num_tensors += file_shape[0] * file_shape[1]
+    
+    return num_tensors

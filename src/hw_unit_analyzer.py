@@ -1,42 +1,19 @@
 import os
-import csv
-import json
 import numpy as np
 import logging as log
-import threading
 
 from tqdm import tqdm
-from typing import List
-from statistics import mean, stdev
-from collections import defaultdict, OrderedDict
+from collections import defaultdict
 
 from args import Args
 from classes import generate_classes_models
 from visualizer import visualize
 from coordinates import map_to_coordinates, numpy_coords_to_python_coord
-from aggregators import cardinalities_counts_by_sp_class, spatial_classes_counts, tensor_count_by_shape
+
+from dataclasses import dataclass
 from analyzed_tensor import AnalyzedTensorConv, AnalyzedTensorFC
 from domain_classifier import ValueClass, domain_classification, value_classification
-from spatial_classifier.spatial_class import SpatialClass
 from spatial_classifier.spatial_classifier import spatial_classification
-
-# SOME UTILITIES ---------------------------------------------------------------------------------------------------
-
-def set_console_logging_level(level):
-    root = log.getLogger()
-    for handler in root.handlers:
-        if isinstance(handler, type(log.StreamHandler)):
-            handler.setLevel(level)
-
-def precalculate_unit_workload(errors_archive) -> int:
-    num_tensors = 0
-
-    for key in errors_archive:
-        errors_file = errors_archive[key]
-        file_shape = errors_file.shape
-        num_tensors += file_shape[0] * file_shape[1]
-    
-    return num_tensors
 
 # ANALYSIS FUNCTIONS ---------------------------------------------------------------------------------------------------
 
@@ -118,351 +95,152 @@ def analyze_hw_unit_directory(unit_dir: str, group_name: str, unit_name: str, ar
     
     return classified_tensors
 
-# ARCHIVE ANALYSIS ---------------------------------------------------------------------------------------------------
-
-def analyze_errors_conv(
-    golden: np.ndarray,
-    golden_range_min: float,
-    golden_range_max: float,
-    errors,
-    args: Args,
-    group_name: str,
-    unit_name: str,
-    progress_bar: tqdm,
-    errors_path: str
-):
-    results: list[AnalyzedTensorConv] = []
-
-    progress_bar_lock = threading.Lock()
-    results_lock = threading.Lock()
-
-    # create the threads
-    threads: list[threading.Thread] = []
-    for thread_idx in range(args.parallel):
-        t = threading.Thread(
-            target=analyze_error_tensors_conv,
-            args=(
-                thread_idx,
-                args.parallel,
-                progress_bar,
-                progress_bar_lock,
-                errors,
-                golden,
-                golden_range_min,
-                golden_range_max,
-                group_name,
-                unit_name,
-                errors_path,
-                args,
-                results,
-                results_lock
-            )
-        )
-        threads.append(t)
-        t.start()
-    
-    # join the threads
-    for t in threads:
-        t.join()
-
-    return results
-
-def analyze_errors_fc(
-    golden: np.ndarray,
-    errors,
-    args: Args,
-    group_name: str,
-    unit_name: str,
-    progress_bar: tqdm,
-    errors_path: str
-):
-    results: list[AnalyzedTensorFC] = []
-
-    progress_bar_lock = threading.Lock()
-    results_lock = threading.Lock()
-
-    # create the threads
-    threads: list[threading.Thread] = []
-    for thread_idx in range(args.parallel):
-        t = threading.Thread(
-            target=analyze_error_tensors_fc,
-            args=(
-                thread_idx,
-                args.parallel,
-                progress_bar,
-                progress_bar_lock,
-                errors,
-                golden,
-                group_name,
-                unit_name,
-                errors_path,
-                results,
-                results_lock
-            )
-        )
-        threads.append(t)
-        t.start()
-    
-    # join the threads
-    for t in threads:
-        t.join()
-
-    return results
-
 # INDIVIDUAL TENSORS ANALYSIS ---------------------------------------------------------------------------------------------
 
-def analyze_error_tensors_conv(
-    thread_idx: int,
-    thread_group_size: int,
-    pbar: tqdm,
-    pbar_lock: threading.Lock,
-    errors,
-    golden: np.ndarray,
-    golden_range_min: float,
-    golden_range_max: float,
-    group_name: str,
-    unit_name: str,
-    errors_path: str,
+@dataclass
+class ProcessArgs:
+    group_name: str
+    unit_name: str
+    errors_file_idx: str
+    errors_file: np.ndarray
+
+def analyze_errors_file_conv(
+    other_args: ProcessArgs,
     args: Args,
-    shared_results: list[AnalyzedTensorConv],
-    shared_results_lock: threading.Lock
+    golden: np.ndarray
 ):
-    local_results = []
+    log.info(f'-->(Process) Analyzing {other_args.group_name}/{other_args.unit_name}, file number {other_args.errors_file_idx}. Tensors to analyze: {other_args.errors_file.shape[0]}')
 
-    keys = list(errors.keys())
-    current_key_idx = 0
+    my_results: list[AnalyzedTensorConv] = []
 
-    # iterate over the files in the archive
-    while current_key_idx < len(keys):
-        current_key = keys[current_key_idx]
-        current_file = errors[current_key]
-        current_shape = current_file.shape
+    # from the whole golden batch, take the tensor associated to this file
+    my_golden = golden[int(other_args.errors_file_idx)]
+    golden_shape = map_to_coordinates(my_golden.shape)
+    golden_range_min = my_golden.min()
+    golden_range_max = my_golden.max()
 
-        # get the golden tensor associated to this key
-        current_golden: np.ndarray = golden[int(current_key)]
-        golden_shape = map_to_coordinates(current_golden.shape)
+    # the errors file is a 5D tensor with this shape (injection_number, batch_number, C, H, W)
+    # we want to iterate through the injection numbers (and always get the first batch number, since it's 1)
+    for injection_num, error in enumerate(other_args.errors_file):
+        error: np.ndarray = error[0]
+        error_shape = map_to_coordinates(error.shape)
 
-        # the current file is a 5D tensor with this shape (injection_number, batch_number, C, H, W)
-        # we want to iterate through the injection numbers (and always get the first batch number, since it's 1)
-        file_idx = thread_idx
-        while file_idx < current_shape[0]:
-            error: np.ndarray = current_file[file_idx][0]
-            error_shape = map_to_coordinates(error.shape)
+        # perform error analysis
+        if golden_shape != error_shape:
+            log.warning(
+                f"Skipping {other_args.group_name}/{other_args.unit_name} number {other_args.errors_file_idx} injection {injection_num}. Invalid shape (Faulty has shape: {error_shape}, Golden has shape: {golden_shape})"
+            )
+        else:
+            value_class_count = defaultdict(int)
 
-            # perform error analysis
-            if golden_shape != error_shape:
-                log.warning(
-                    f"Skipping {errors_path} number {current_key} injection {file_idx}. Invalid shape (Faulty has shape: {error_shape}, Golden has shape: {golden_shape})"
-                )
+            # generate a list of all coordinates where a difference is observed (Sparse matrix)
+            if args.almost_same:
+                sparse_diff_native_coords = list(zip(*np.nonzero(error - my_golden)))
             else:
-                value_class_count = defaultdict(int)
+                sparse_diff_native_coords = list(zip(*np.where(np.abs(error - my_golden) >= args.epsilon)))
 
-                # generate a list of all coordinates where a difference is observed (Sparse matrix)
-                if args.almost_same:
-                    sparse_diff_native_coords = list(zip(*np.nonzero(error - current_golden)))
-                else:
-                    sparse_diff_native_coords = list(zip(*np.where(np.abs(error - current_golden) >= args.epsilon)))
+            tensor_diff = np.zeros(error.shape, dtype=np.int8)    
 
-                tensor_diff = np.zeros(error.shape, dtype=np.int8)    
+            # value classification
+            for coord in sparse_diff_native_coords:
+                val_class = value_classification(my_golden[coord[0], coord[1], coord[2]], error[coord[0], coord[1], coord[2]], golden_range_min, golden_range_max, args.epsilon, args.almost_same)
+                tensor_diff[coord[0], coord[1], coord[2]] = val_class.value
+                value_class_count[val_class] += 1
 
-                # value classification
-                for coord in sparse_diff_native_coords:
-                    val_class = value_classification(current_golden[coord[0], coord[1], coord[2]], error[coord[0], coord[1], coord[2]], golden_range_min, golden_range_max, args.epsilon, args.almost_same)
-                    tensor_diff[coord[0], coord[1], coord[2]] = val_class.value
-                    value_class_count[val_class] += 1
+            value_class_count[ValueClass.SAME] = my_golden.size - sum(value_class_count.values())
 
-                value_class_count[ValueClass.SAME] = current_golden.size - sum(value_class_count.values())
+            # proceed only if there are real differences
+            if len(sparse_diff_native_coords) != 0:
+                sparse_diff = [
+                    map_to_coordinates(numpy_coords_to_python_coord(coords))
+                    for coords in sparse_diff_native_coords
+                ]
 
-                # proceed only if there are real differences
-                if len(sparse_diff_native_coords) != 0:
-                    sparse_diff = [
-                        map_to_coordinates(numpy_coords_to_python_coord(coords))
-                        for coords in sparse_diff_native_coords
-                    ]
+                # spatial classifcation
+                spatial_class, pattern_params, faulty_channels = spatial_classification(sparse_diff, golden_shape)
+                domain_class = domain_classification(value_class_count)
 
-                    # spatial classifcation
-                    spatial_class, pattern_params, faulty_channels = spatial_classification(sparse_diff, golden_shape)
-                    domain_class = domain_classification(value_class_count)
-
-                    # create visualization
-                    if args.visualize:
-                        folder_path = spatial_class.class_folder(args.visualize_path)
-                        file_count = len([x for x in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, x))])
-                        if args.visualize_limit == 0 or file_count < args.visualize_limit:
-                            visualize(
-                                tensor_diff,
-                                faulty_channels,
-                                spatial_class.output_path(
-                                    args.visualize_path, f'{group_name}_{unit_name}_{current_key}_{file_idx}'
-                                ),
-                                save=True,
-                                show=False,
-                                suptitile=f'{group_name} {unit_name} {current_key} {file_idx} {current_golden.shape[0]}x{current_golden.shape[1]}x{current_golden.shape[2]}',
-                                invalidate=True,
-                            )
-
-                    # produce analyzed tensor
-                    local_results.append(
-                        AnalyzedTensorConv(
-                            group=group_name,
-                            hw_unit=unit_name,
-                            error_number=int(current_key),
-                            injection_number=file_idx,
-                            shape=error.shape,
-                            spatial_class=spatial_class,
-                            spatial_class_params=pattern_params,
-                            value_classes_counts=value_class_count,
-                            domain_class=domain_class,
-                            corrupted_values_count=len(sparse_diff_native_coords),
-                            corrupted_channels_count=len(faulty_channels)
+                # create visualization
+                if args.visualize:
+                    folder_path = spatial_class.class_folder(args.visualize_path)
+                    file_count = len([x for x in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, x))])
+                    if args.visualize_limit == 0 or file_count < args.visualize_limit:
+                        visualize(
+                            tensor_diff,
+                            faulty_channels,
+                            spatial_class.output_path(
+                                args.visualize_path, f'{other_args.group_name}_{other_args.unit_name}_{other_args.errors_file_idx}_{injection_num}'
+                            ),
+                            save=True,
+                            show=False,
+                            suptitile=f'{other_args.group_name}/{other_args.unit_name} {other_args.errors_file_idx} {injection_num} {my_golden.shape[0]}x{my_golden.shape[1]}x{my_golden.shape[2]}',
+                            invalidate=True,
                         )
-                    )
 
-            # update progress bar
-            pbar_lock.acquire()
-            pbar.update()
-            pbar_lock.release()
-
-            file_idx += thread_group_size
-        
-        current_key_idx += 1
-
-    # store final results
-    shared_results_lock.acquire()
-    shared_results += local_results
-    shared_results_lock.release()
-
-def analyze_error_tensors_fc(
-    thread_idx: int,
-    thread_group_size: int,
-    pbar: tqdm,
-    pbar_lock: threading.Lock,
-    errors,
-    golden: np.ndarray,
-    group_name: str,
-    unit_name: str,
-    errors_path: str,
-    shared_results: list[AnalyzedTensorConv],
-    shared_results_lock: threading.Lock
-):
-    local_results = []
-
-    keys = list(errors.keys())
-    current_key_idx = 0
-
-    while current_key_idx < len(keys):
-        current_key = keys[current_key_idx]
-        current_file = errors[current_key]
-        current_shape = current_file.shape
-
-        current_golden: np.ndarray = golden[int(current_key)]
-
-        file_idx = thread_idx
-        while file_idx < current_shape[0]:
-            error: np.ndarray = current_file[file_idx][0]
-            
-            # perform error analysis
-            if error.shape != current_golden.shape:
-                log.warning(
-                    f"Skipping {errors_path} number {current_key} injection {file_idx}. Invalid shape (Faulty has shape: {error.shape}, Golden has shape: {current_golden.shape})"
-                )
-            else:
-                num_equal_elements = np.sum(error == current_golden)
-                num_different_elements = error.size - num_equal_elements
-
-                L1_dist = np.linalg.norm(error-current_golden, 1)
-                L2_dist = np.linalg.norm(error-current_golden)
-
-                # Per tensor report generator
-                local_results.append(
-                    AnalyzedTensorFC(
-                        group=group_name,
-                        hw_unit=unit_name,
-                        error_number=int(current_key),
-                        injection_number=file_idx,
+                # produce analyzed tensor
+                my_results.append(
+                    AnalyzedTensorConv(
+                        group=other_args.group_name,
+                        hw_unit=other_args.unit_name,
+                        error_number=int(other_args.errors_file_idx),
+                        injection_number=injection_num,
                         shape=error.shape,
-                        corrupted_values_count=num_different_elements,
-                        L1_distance=L1_dist,
-                        L2_distance=L2_dist
+                        spatial_class=spatial_class,
+                        spatial_class_params=pattern_params,
+                        value_classes_counts=value_class_count,
+                        domain_class=domain_class,
+                        corrupted_values_count=len(sparse_diff_native_coords),
+                        corrupted_channels_count=len(faulty_channels)
                     )
                 )
-                
-            # update progress bar
-            pbar_lock.acquire()
-            pbar.update()
-            pbar_lock.release()
+    
+    log.info(f'<--(Process) Analysis done for {other_args.group_name}/{other_args.unit_name}, file number {other_args.errors_file_idx}.')
 
-            file_idx += thread_group_size
-        
-        current_key_idx += 1
+    return my_results
 
-    # store final results
-    shared_results_lock.acquire()
-    shared_results += local_results
-    shared_results_lock.release()
+def analyze_errors_file_fc(
+    other_args: ProcessArgs,
+    args: Args,
+    golden: np.ndarray
+):
+    log.info(f'-->(Process) Analyzing {other_args.group_name}/{other_args.unit_name}, file number {other_args.errors_file_idx}.')
 
-# REPORT GENERATION ---------------------------------------------------------------------------------------------------
+    my_results: list[AnalyzedTensorConv] = []
 
-def generate_unit_report_conv(unit_dir: str, analyzed_tensors: list[AnalyzedTensorConv]):
-    report = OrderedDict()
+    # from the whole golden batch, take the tensor associated to this file
+    my_golden = golden[other_args.errors_file_idx]
 
-    report["classified_tensors"] = len(analyzed_tensors)
-    report["tensors_by_shape"] = tensor_count_by_shape(analyzed_tensors)
-    report["spatial_classes"] = spatial_classes_counts(analyzed_tensors)
-    report["class_cardinalites"] = cardinalities_counts_by_sp_class(analyzed_tensors)
+    # the errors file is a 3D tensor with this shape (injection_number, batch_number, N)
+    # we want to iterate through the injection numbers (and always get the first batch number, since it's 1)
+    for injection_num, error in enumerate(other_args.errors_file):
+        error: np.ndarray = error[0]
 
-    report_path = os.path.join(unit_dir, 'unit_report.json')
-    with open(report_path, 'w') as rf:
-        json.dump(report, rf, indent=2)
+        # perform error analysis
+        if my_golden.shape != error.shape:
+            log.warning(
+                f"Skipping {other_args.group_name}/{other_args.unit_name} number {other_args.errors_file_idx} injection {injection_num}. Invalid shape (Faulty has shape: {error_shape}, Golden has shape: {golden_shape})"
+            )
+        else:
+            num_equal_elements = np.sum(error == my_golden)
+            num_different_elements = error.size - num_equal_elements
 
-def generate_unit_report_fc(unit_dir: str, analyzed_tensors: List[AnalyzedTensorFC]):
-    report = OrderedDict()
+            L1_dist = np.linalg.norm(error-my_golden, 1)
+            L2_dist = np.linalg.norm(error-my_golden)
 
-    report["classified_tensors"] = len(analyzed_tensors)
-    report["tensor_shape"] = analyzed_tensors[0].shape
+            # Per tensor report generator
+            my_results.append(
+                AnalyzedTensorFC(
+                    group=other_args.group_name,
+                    hw_unit=other_args.unit_name,
+                    error_number=int(other_args.errors_file_idx),
+                    injection_number=injection_num,
+                    shape=error.shape,
+                    corrupted_values_count=num_different_elements,
+                    L1_distance=L1_dist,
+                    L2_distance=L2_dist
+                )
+            )
+    
+    log.info(f'<--(Process) Analysis done for {other_args.group_name}/{other_args.unit_name}, file number {other_args.errors_file_idx}.')
 
-    # determine min, max, avg and std. dev. of number of corrupted values, L1 distance and L2 distance
-    corrupted_values_counts = []
-    L1_distances = []
-    L2_distances = []
-
-    for tensor in analyzed_tensors:
-        corrupted_values_counts.append(tensor.corrupted_values_count)
-        L1_distances.append(tensor.L1_distance)
-        L2_distances.append(tensor.L2_distance)
-
-    report["num_corrupted_values"] = {
-        "min": min(corrupted_values_counts),
-        "max": max(corrupted_values_counts),
-        "mean": mean(corrupted_values_counts),
-        "stdev": stdev(corrupted_values_counts)
-    }
-    report["L1_distance"] = {
-        "min": min(L1_distances),
-        "max": max(L1_distances),
-        "mean": mean(L1_distances),
-        "stdev": stdev(L1_distances)
-    }
-    report["L2_distance"] = {
-        "min": min(L2_distances),
-        "max": max(L2_distances),
-        "mean": mean(L2_distances),
-        "stdev": stdev(L2_distances)
-    }
-
-    report_path = os.path.join(unit_dir, 'unit_report.json')
-    with open(report_path, 'w') as rf:
-        json.dump(report, rf, indent=2)
-
-def report_uncategorized_tensors(unit_dir: str, analyzed_tensors: list):
-    report_path = os.path.join(unit_dir, 'uncategorized_log.csv')
-
-    with open(report_path, 'w', newline='') as csvlog:
-        logwriter = csv.writer(csvlog)
-        logwriter.writerow(['Type', 'Error Number', 'Injection Number'])
-
-        for tensor in analyzed_tensors:
-            if tensor.spatial_class == SpatialClass.SINGLE_CHANNEL_RANDOM:
-                logwriter.writerow(['Single', tensor.error_number, str(tensor.injection_number)])
-            elif tensor.spatial_class == SpatialClass.MULTIPLE_CHANNELS_UNCATEGORIZED:
-                logwriter.writerow(['Multiple', tensor.error_number, str(tensor.injection_number)])
+    return my_results

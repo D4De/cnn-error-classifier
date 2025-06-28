@@ -54,7 +54,7 @@ def generate_classes_models(results : Iterable[AnalyzedTensorConv], args: Args, 
 
     if unit_path is None:
         # create the model for the entire operator
-        model_filename = f"{args.classes[0]}_{args.classes[1]}.json"
+        model_filename = f"{args.classes}.json"
         with open(os.path.join(args.classes_output_dir, model_filename), 'w') as mf:
             json.dump(classes_model, mf, indent=2)
     else:
