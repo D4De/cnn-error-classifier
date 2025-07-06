@@ -105,6 +105,7 @@ def prune_classes_model(classes_model : Dict[str, dict], args: Args):
     
     redone_classes_model = {}
     redone_classes_model["_rejected_tensors_proportion"] = 1 - (updated_tensor_count / classes_model["_tensor_count_pre_pruning"])
+    redone_classes_model["_rejected_tensor_count"] = classes_model["_tensor_count_pre_pruning"]
     redone_classes_model["_tensor_count"] = updated_tensor_count
     redone_classes_model["_categories_count"] = updated_category_count
 
