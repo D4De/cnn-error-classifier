@@ -8,6 +8,7 @@ from aggregators import cardinalities_counts_by_sp_class, spatial_classes_counts
 from analyzed_tensor import AnalyzedTensorConv, AnalyzedTensorFC
 from spatial_classifier.spatial_class import SpatialClass
 
+
 def generate_unit_report_conv(unit_dir: str, analyzed_tensors: list[AnalyzedTensorConv]):
     report = OrderedDict()
 
@@ -19,6 +20,7 @@ def generate_unit_report_conv(unit_dir: str, analyzed_tensors: list[AnalyzedTens
     report_path = os.path.join(unit_dir, 'unit_report.json')
     with open(report_path, 'w') as rf:
         json.dump(report, rf, indent=2)
+
 
 def generate_unit_report_fc(unit_dir: str, analyzed_tensors: list[AnalyzedTensorFC]):
     report = OrderedDict()
@@ -59,15 +61,25 @@ def generate_unit_report_fc(unit_dir: str, analyzed_tensors: list[AnalyzedTensor
     with open(report_path, 'w') as rf:
         json.dump(report, rf, indent=2)
 
-def report_uncategorized_tensors(unit_dir: str, analyzed_tensors: list):
-    report_path = os.path.join(unit_dir, 'uncategorized_log.csv')
+
+def report_tensor_results(output_dir: str, analyzed_tensors: list[AnalyzedTensorConv]):
+    """
+    Writes a csv report concerning all analyzed tensors.
+    The report can be later used to create the error tensor visualizations for all spatial classes
+    or for a specific subset of them (e.g. only the uncategorized tensors).
+    """
+    report_path = os.path.join(output_dir, 'tensor_results_report.csv')
 
     with open(report_path, 'w', newline='') as csvlog:
         logwriter = csv.writer(csvlog)
-        logwriter.writerow(['Type', 'Error Number', 'Injection Number'])
+        logwriter.writerow(['Spatial Class', 'Unit Group', 'HW Unit', 'Error Number', 'Injection Number', 'Corrupted Channels'])
 
         for tensor in analyzed_tensors:
-            if tensor.spatial_class == SpatialClass.SINGLE_CHANNEL_RANDOM:
-                logwriter.writerow(['Single', tensor.error_number, str(tensor.injection_number)])
-            elif tensor.spatial_class == SpatialClass.MULTIPLE_CHANNELS_UNCATEGORIZED:
-                logwriter.writerow(['Multiple', tensor.error_number, str(tensor.injection_number)])
+            logwriter.writerow([
+                tensor.spatial_class.display_name(),
+                tensor.group,
+                tensor.hw_unit,
+                tensor.error_number,
+                str(tensor.injection_number),
+                str(tensor.corrupted_channels)
+            ])

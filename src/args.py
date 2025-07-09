@@ -40,11 +40,6 @@ class Args:
     If a different file name was used, specify it with this.
     """
 
-    visualize: bool
-    """
-    If true, visualizations of the error spatial patterns are generated. Default is false.
-    """
-
     almost_same: bool
     """
     If true, the "ALMOST_SAME" domain class is enabled. All erroneous values
@@ -70,16 +65,8 @@ class Args:
     Store experiment data in a sqlite database file. Default is false.
     """
 
-    visualize_limit : int
-    """
-    Maximum amount of error visualizations to generate for each hardware unit.
-    Default is 0, meaning no limit.
-    """
-
     # Derived or preconfigured
     classes_output_dir: str | None
-
-    visualize_path: str | None
 
     classes_category_absolute_cutoff : int
 
@@ -97,14 +84,11 @@ class Args:
             golden_path=args.golden_path,
             errors_archive_filename=args.errors_archive_filename,
             output_dir=os.path.realpath(args.output_dir),
-            visualize=args.visualize,
             almost_same=args.almost_same,
             classes=args.classes,
             parallel=args.parallel,
             database=args.database,
-            visualize_limit=args.visualize_limit,
             classes_output_dir=os.path.join(args.output_dir, 'classes') if args.classes else None,
-            visualize_path=os.path.join(args.output_dir, "visualize") if args.visualize else None,
             classes_category_absolute_cutoff=5,
             classes_category_relative_cutoff=0.01,
         )
@@ -119,10 +103,12 @@ def create_parser() -> ArgumentParser:
         description="Compares the faulty tensors obtained from an injection campaign with the golden tensor and classifies them, producing " \
             "error models for CLASSES.",
     )
+
     parser.add_argument(
         "root_path",
         help="A path to the root folder of the test results for one operator."
     )
+
     parser.add_argument(
         "output_dir",
         help="Path to the output directory. The directory does not need to exist."
@@ -134,6 +120,7 @@ def create_parser() -> ArgumentParser:
         required=False,
         default='golden.npy'
     )
+
     parser.add_argument(
         "--errors_archive_filename",
         help="Name of the errors archive within each hardware unit directory.",
@@ -149,12 +136,6 @@ def create_parser() -> ArgumentParser:
         metavar="N",
         default=1,
     )
-    parser.add_argument(
-        "-v",
-        "--visualize",
-        action="store_true",
-        help="Generate images showing the differences between tensors and the spatial patterns.",
-    )
 
     parser.add_argument(
         "-as",
@@ -162,6 +143,7 @@ def create_parser() -> ArgumentParser:
         action="store_true",
         help="Include in the plot the values that are very close to golden value (< EPS).",
     )
+
     parser.add_argument(
         "-eps",
         "--epsilon",
@@ -172,7 +154,6 @@ def create_parser() -> ArgumentParser:
 
     parser.add_argument(
         "--classes",
-        nargs=1,
         metavar=("MODEL_NAME"),
         help="Generate models for CLASSES.",
     )
@@ -182,13 +163,6 @@ def create_parser() -> ArgumentParser:
         "--database",
         action="store_true",
         help="Store results in a sqlite database.",
-    )
-    parser.add_argument(
-        "-vl",
-        "--visualize-limit",
-        type=int,
-        default=0,
-        help="Maximum number of visualized tensors per hardware unit."
     )
 
     return parser

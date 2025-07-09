@@ -13,6 +13,7 @@ class AnalyzedTensorConv:
     hw_unit : str
     error_number: int
     injection_number: int
+    corrupted_channels: list[int]
     shape : tuple
     spatial_class : SpatialClass    
     spatial_class_params : SpatialClassParameters
@@ -32,6 +33,7 @@ class AnalyzedTensorConv:
             "hw_unit": self.hw_unit,
             "error_number": self.error_number,
             "injection_number": self.injection_number,
+            "corrupted_channels": self.corrupted_channels,
             "shape": self.shape,
             "spatial_class": self.spatial_class.display_name(),
             "spatial_class_params": self.spatial_class_params.to_json(),

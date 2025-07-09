@@ -3,31 +3,18 @@ import json
 import numpy as np
 import logging as log
 import traceback
-import multiprocessing
 
-import dill
-dill.Pickler.dumps, dill.Pickler.loads = dill.dumps, dill.loads
-multiprocessing.reduction.ForkingPickler = dill.Pickler
-
-from tqdm import tqdm
 from statistics import mean, stdev
 from collections import OrderedDict
 
 from db import create_db, delete_db, put_experiment_data
 from args import Args, create_parser
-from utils import precalculate_unit_workload
 from classes import generate_classes_models
-from functools import partial
 from aggregators import cardinalities_counts_by_sp_class, spatial_classes_counts, tensor_count_by_shape
-from report_utils import generate_unit_report_conv, generate_unit_report_fc, report_uncategorized_tensors
-from logging_utils import setup_logging, set_console_logging_level
+from report_utils import report_tensor_results
+from logging_utils import setup_logging
 from analyzed_tensor import AnalyzedTensorConv, AnalyzedTensorFC
-from hw_unit_analyzer import ProcessArgs, analyze_errors_file_conv, analyze_errors_file_fc
-
-from spatial_classifier.spatial_classifier import (
-    clear_spatial_classification_folders,
-    create_visual_spatial_classification_folders,
-)
+from hw_unit_analyzer import analyze_hw_unit_directory
 
 
 def main():
@@ -56,6 +43,10 @@ def main():
     except:
         log.error(f'Golden file {golden_path} cannot be loaded.')
         raise ValueError()
+
+    # Get range bounds for the golden tensor
+    golden_range_min = np.min(golden)
+    golden_range_max = np.max(golden)
 
     # The hardware unit directories are grouped wrt the hardware path for the injection (control or data)
     ctrl_dir = os.path.join(args.root_path, 'ctrl')
@@ -86,14 +77,6 @@ def main():
     if args.classes and not os.path.isdir(args.classes_output_dir):
         log.info('Creating classes directory.')
         os.makedirs(args.classes_output_dir, exist_ok=True)
-
-
-    # Create/clear the output folder for spatial class visualizations
-    if args.visualize:
-        log.info('Creating visualization directories.')
-        clear_spatial_classification_folders(args.visualize_path)
-        # Create output folder structure (if it does not exist already)
-        create_visual_spatial_classification_folders(args.visualize_path)
     
     # Prepare the database if requested
     if args.database:
@@ -105,95 +88,13 @@ def main():
     # START ANALYSIS
     global_results = []
 
-    def _generate_reports_conv(group_name: str, unit_name: str, tensors: list):
-        if args.classes:
-            unit_dir = os.path.join(args.classes_output_dir, f'{group_name}_{unit_name}')
-            if not os.path.isdir(unit_dir):
-                os.makedirs(unit_dir, exist_ok=True)
-
-            generate_classes_models(tensors, args, unit_dir)
-            generate_unit_report_conv(unit_dir, tensors)
-            report_uncategorized_tensors(unit_dir, tensors)
-
-    def _generate_reports_fc(group_name: str, unit_name: str, tensors: list):
-        unit_dir = os.path.join(args.classes_output_dir, unit_name)
-        if not os.path.isdir(unit_dir):
-            os.makedirs(unit_dir, exist_ok=True)
-
-        generate_unit_report_fc(unit_dir, tensors)
-
-    # determine the type of operator according to the golden shape
-    if len(golden.shape) == 4:
-        # assume convolutional
-        log.info('Golden is 4D, assuming convolutional layer.')
-        analysis_function = analyze_errors_file_conv
-        report_function = _generate_reports_conv
-    elif len(golden.shape == 2):
-        # assume fully connected
-        log.info('Golden is 2D, assuming fully connected layer.')
-        analysis_function = analyze_errors_file_fc
-        report_function = _generate_reports_fc
-    else:
-        log.error(f'Unrecognized golden shape: {golden.shape}. Analysis is impossible.')
-        raise ValueError()
-
-
-    # proceed one unit directory at a time
-    def _analyze_unit_directory(group_name: str, unit_name: str, dir_path: str):
-        log.info(f'---Starting analysis of {group_name}/{unit_name}.')
-        errors_archive_path = os.path.join(dir_path, args.errors_archive_filename)
-
-        if not os.path.exists(errors_archive_path):
-            log.warning(f'Errors archive {errors_archive_path} does not exist. Skipping.')
-            return []
-
-        errors_archive = np.load(errors_archive_path)
-        num_errors = precalculate_unit_workload(errors_archive)
-
-        log.info(f'Loaded errors archive: number of errors is {num_errors}.')
-
-        # get the error files: archive_files is a list of tuples (file_id, numpy error file)
-        archive_files = errors_archive.items()
-
-        # prepare list of arguments to map to processes
-        process_arguments: list[ProcessArgs] = []
-        for file in archive_files:
-            process_arguments.append(
-                ProcessArgs(
-                    group_name=group_name,
-                    unit_name=unit_name,
-                    errors_file_idx=file[0],
-                    errors_file=file[1]
-                )
-            )
-
-        # partially map the analysis function with the common arguments
-        analysis_partial = partial(analysis_function, args=args, golden=golden)
-
-        # start parallel analysis
-        with multiprocessing.Pool(args.parallel) as pool:
-            result = pool.map_async(analysis_partial, process_arguments, chunksize=1)
-            final_result = result.get()
-
-        # collect results
-        unit_analyzed_tensors = []
-
-        for process_result in final_result:
-            if process_result is not None:
-                unit_analyzed_tensors += process_result
-
-        # create unit reports
-        report_function(group_name=group_name, unit_name=unit_name, tensors=unit_analyzed_tensors)
-        
-        return unit_analyzed_tensors
-
-
     for ctrl_dir_name in ctrl_dirs_names:
-        dir_path = os.path.join(ctrl_dir, ctrl_dir_name)
-        global_results += _analyze_unit_directory('ctrl', ctrl_dir_name, dir_path)
+        unit_path = os.path.join(ctrl_dir, ctrl_dir_name)
+        global_results += analyze_hw_unit_directory(unit_path, 'ctrl', ctrl_dir_name, args, golden, golden_range_min, golden_range_max)
+
     for data_dir_name in data_dirs_names:
-        dir_path = os.path.join(data_dir, data_dir_name)
-        global_results += _analyze_unit_directory('data', data_dir_name, dir_path)
+        unit_path = os.path.join(data_dir, data_dir_name)
+        global_results += analyze_hw_unit_directory(unit_path, 'data', data_dir_name, args, golden, golden_range_min, golden_range_max)
 
 
     # ANALYSIS DONE
@@ -228,6 +129,9 @@ def main():
         global_report["tensors_by_shape"] = tensor_count_by_shape(global_results)
         global_report["spatial_classes"] = spatial_classes_counts(global_results)
         global_report["class_cardinalites"] = cardinalities_counts_by_sp_class(global_results)
+
+        # generate the results report for optional visualization creation
+        report_tensor_results(args.output_dir, global_results)
 
     # FULLY CONNECTED LAYER
     elif result_type == AnalyzedTensorFC:
