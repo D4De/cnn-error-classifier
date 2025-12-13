@@ -1,24 +1,23 @@
 import os
-import logging as log
-import numpy as np
-import json
 import csv
+import json
+import numpy as np
+import logging as log
 
-from multiprocessing import Queue
-from typing import Any, Dict, List, Tuple, Union
-from args import Args
-from typing import Callable, Optional
-from collections import defaultdict, OrderedDict
+from typing import Any, Dict, List, Tuple, Union, Callable, Optional
 from statistics import mean, stdev
+from collections import OrderedDict
+from multiprocessing import Queue
 
-from analyzed_tensor import AnalyzedTensor, AnalyzedTensorFC
-from coordinates import map_to_coordinates, numpy_coords_to_python_coord, coordinates_to_tuple
-from aggregators import cardinalities_counts_by_sp_class, spatial_classes_counts, tensor_count_by_shape
-from domain_classifier import ValueClass, domain_classification, value_classification
-from spatial_classifier.spatial_classifier import spatial_classification
-from spatial_classifier.spatial_class import SpatialClass
-from visualizer import visualize
+from args import Args
 from classes import generate_classes_models
+from visualizer import visualize
+from coordinates import map_to_coordinates
+from aggregators import cardinalities_counts_by_sp_class, spatial_classes_counts, tensor_count_by_shape
+from analyzed_tensor import AnalyzedTensor, AnalyzedTensorFC
+from domain_classifier import ValueClass, domain_classification, value_classification
+from spatial_classifier.spatial_class import SpatialClass
+from spatial_classifier.spatial_classifier import spatial_classification
 
 
 def analyze_batch(
@@ -221,58 +220,63 @@ def analyze_errors_archive_fc(
 # SINGLE TENSOR ANALYSIS ---------------------------------------------------------------------------------------------
 
 def analyze_error_tensor(
-    errors_path: str,
-    error_number: str,
-    injection_number: int,
-    tensor: np.ndarray,
-    golden: np.ndarray,
-    golden_range_min: float,
-    golden_range_max: float,
-    args: Args,
-    metadata: dict = {},
+    errors_path      : str,
+    error_number     : str,
+    injection_number : int,
+    tensor           : np.ndarray,
+    golden           : np.ndarray,
+    golden_range_min : float,
+    golden_range_max : float,
+    args             : Args,
+    metadata         : dict = {},
 ) -> Tuple[str, Optional[AnalyzedTensor]]:
 
-    error_shape = map_to_coordinates(tensor.shape, args.layout)
-    golden_shape = map_to_coordinates(golden.shape, args.layout)
-
-    # Check shape correctness
-    if error_shape != golden_shape:
-        log.warning(
-            f"Skipping {errors_path} number {error_number} injection {injection_number}. Invalid shape (Faulty has shape: {error_shape}, Golden has shape: {golden_shape})"
-        )
+    # Ensure that the shapes match
+    if tensor.shape != golden.shape:
+        log.warning(f"Skipping {errors_path} number {error_number} injection {injection_number}." \
+                    f"Invalid shape (Faulty has shape: {tensor.shape}, Golden has shape: {golden.shape})")
         return "skipped", None
 
-    value_class_count = defaultdict(int)
+    # A Coordinates object is a named tuple with fields N, H, W, C. The tensor shapes are transformed to fit a specific layout,
+    # such as NCHW for PyTorch.
+    error_shape  = map_to_coordinates(tensor.shape, args.layout)
 
-    # Generate a list of all coordinates where a difference is observed (Sparse matrix)
-    if args.almost_same:
-        sparse_diff_native_coords = list(zip(*np.nonzero(tensor - golden)))
-    else:
-        sparse_diff_native_coords = list(zip(*np.where(np.abs(tensor - golden) >= args.epsilon)))
-
-    tensor_diff = np.zeros(coordinates_to_tuple(error_shape), dtype=np.int8)    
-
-    for coord in sparse_diff_native_coords:
-        val_class = value_classification(golden[coord[0], coord[1], coord[2], coord[3]], tensor[coord[0], coord[1], coord[2], coord[3]], golden_range_min, golden_range_max,  args.epsilon, args.almost_same)
-        tensor_diff[coord[0], coord[1], coord[2], coord[3]] = val_class.value
-        value_class_count[val_class] += 1
-    
-    value_class_count[ValueClass.SAME] = golden.size - sum(value_class_count.values())
+    # Determine spots where the golden tensor and the error tensor differ
+    diff_mask = \
+        np.abs(tensor - golden) >= args.epsilon if args.almost_same \
+        else (tensor - golden) != 0
 
     # No diff = masked
-    if len(sparse_diff_native_coords) == 0:
+    if np.count_nonzero(diff_mask) == 0:
         log.info(f"{errors_path} number {error_number} injection {injection_number} has no diffs with golden")
         return "masked", None
-    sparse_diff = [
-        map_to_coordinates(numpy_coords_to_python_coord(coords), args.layout)
-        for coords in sparse_diff_native_coords
-    ]
 
-    # Pefmorm spatial classifcation
-    spatial_class, pattern_params, faulty_channels = spatial_classification(sparse_diff, golden_shape)
-    domain_class = domain_classification(value_class_count)
+    # Extract the values in the non-matching spots. These are 1D numpy arrays
+    faulty_values          = tensor[diff_mask]
+    matching_golden_values = golden[diff_mask]
 
+    # Perform value classification of the differing elements
+    value_class_counts, faulty_value_classes = value_classification(
+        faulty_values,
+        matching_golden_values,
+        golden_range_min,
+        golden_range_max
+    )
+    value_class_counts[ValueClass.SAME] = golden.size - sum(value_class_counts.values())
+
+    # Perform domain classification
+    domain_class = domain_classification(value_class_counts)
+
+    # Perform spatial classifcation
+    spatial_class, pattern_params, faulty_channels = spatial_classification(diff_mask, error_shape, args.layout)
+
+    # Produce tensor difference visualization if requested
     if args.visualize:
+        # This is used to store the value class of each error element that differs from the golden tensor, preserving
+        # the shape of the original tensor
+        tensor_diff = np.zeros_like(tensor, dtype=np.int8)
+        tensor_diff[diff_mask] = faulty_value_classes
+
         folder_path = spatial_class.class_folder(args.visualize_path)
         file_count = len([x for x in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, x))])
         if args.visualize_limit == 0 or file_count < args.visualize_limit:
@@ -285,29 +289,28 @@ def analyze_error_tensor(
                 ),
                 save=True,
                 show=False,
-                suptitile=f'{metadata.get("batch_name") or ""} {metadata.get("sub_batch_name") or "" or error_number} {golden_shape.C}x{golden_shape.H}x{golden_shape.W}',
+                suptitile=f'{metadata.get("batch_name") or ""} {metadata.get("sub_batch_name") or "" or error_number} {error_shape.C}x{error_shape.H}x{error_shape.W}',
                 invalidate=True,
             )
-        
 
     # Per tensor report generator
     return spatial_class.display_name(), AnalyzedTensor(
-        batch=metadata["batch_name"],
-        sub_batch=error_number,
-        injection_number=injection_number,
-        file_name=os.path.basename(errors_path),
-        file_path=errors_path,
-        shape=error_shape,
-        spatial_class=spatial_class,
-        spatial_class_params=pattern_params,
-        value_classes_counts= value_class_count,
-        corrupted_channels_count=len(faulty_channels),
-        corrupted_values_count=len(sparse_diff),
-        domain_class=domain_class,
-        golden_range_min=golden_range_min,
-        golden_range_max=golden_range_max,
-        layout=args.layout,
-        metadata=metadata
+        batch                    = metadata["batch_name"],
+        sub_batch                = error_number,
+        injection_number         = injection_number,
+        file_name                = os.path.basename(errors_path),
+        file_path                = errors_path,
+        shape                    = error_shape,
+        spatial_class            = spatial_class,
+        spatial_class_params     = pattern_params,
+        value_classes_counts     = value_class_counts,
+        corrupted_channels_count = len(faulty_channels),
+        corrupted_values_count   = np.count_nonzero(diff_mask),
+        domain_class             = domain_class,
+        golden_range_min         = golden_range_min,
+        golden_range_max         = golden_range_max,
+        layout                   = args.layout,
+        metadata                 = metadata
     )
 
 def analyze_error_tensor_fc(
