@@ -305,7 +305,7 @@ def analyze_error_tensor(
         spatial_class_params     = pattern_params,
         value_classes_counts     = value_class_counts,
         corrupted_channels_count = len(faulty_channels),
-        corrupted_values_count   = np.count_nonzero(diff_mask),
+        corrupted_values_count   = int(np.count_nonzero(diff_mask)),
         domain_class             = domain_class,
         golden_range_min         = golden_range_min,
         golden_range_max         = golden_range_max,
