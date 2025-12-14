@@ -140,3 +140,4 @@ data/
 **/models_*
 classifier_tests/
 classification_outputs/
+**/benchmarks/

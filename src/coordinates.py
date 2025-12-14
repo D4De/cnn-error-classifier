@@ -58,7 +58,7 @@ def raveled_channel_index(shape: Coordinates, coordinate: Coordinates) -> int:
 def raveled_tensor_index(shape: Coordinates, coordinate: Coordinates) -> int:
     """
     Takes in input the shape of a tensor and a coordinate. coordinate must be within the shape
-    Returns the raveled index inside the tensor. For example if the channel HxW dimensions are 8x16 and the
+    Returns the raveled index inside the tensor. For example if the channel HxW dimensions are 8x16
     and the coordinates are C: 2 H: 4, W: 8 (the other dimensions are ignored) the raveled index will be 8 * 16 + 4 + 2 * 4 * 8.
 
     This index reflects the fact that the channel is raveled inside the memory using a row major order, so the last item of a row is
