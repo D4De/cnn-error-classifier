@@ -367,8 +367,8 @@ def generate_batch_report(batch_dir: str, analyzed_tensors: list[AnalyzedTensor]
     report = OrderedDict()
 
     report["classified_tensors"] = len(analyzed_tensors)
-    report["tensors_by_shape"] = tensor_count_by_shape(analyzed_tensors)
-    report["spatial_classes"] = spatial_classes_counts(analyzed_tensors)
+    report["tensors_by_shape"]   = tensor_count_by_shape(analyzed_tensors)
+    report["spatial_classes"]    = spatial_classes_counts(analyzed_tensors)
     report["class_cardinalites"] = cardinalities_counts_by_sp_class(analyzed_tensors)
 
     report_path = os.path.join(batch_dir, 'unit_report.json')

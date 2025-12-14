@@ -102,7 +102,7 @@ def spatial_classification(
     # corrupted_channels = sorted(list({x.C for x in sparse_diff}))
 
     # find indices of the corrupted channels
-    corrupted_channels: list[int] = np.nonzero(diff_mask)[1].tolist()  # channel dimension has index 1
+    corrupted_channels: list[int] = np.unique(np.nonzero(diff_mask)[1]).tolist()  # channel dimension has index 1
 
     # test for full_channels first to optimize
     full_channels_result = full_channels_pattern(diff_mask, shape, corrupted_channels)
