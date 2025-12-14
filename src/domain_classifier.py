@@ -77,8 +77,11 @@ def value_classification(
     faulty_value_classes[zero_mask] = ValueClass.ZERO.value
     value_class_counts[ValueClass.ZERO] = np.count_nonzero(zero_mask)
     
-    # OR the two masks and invert to get the remaining elements
+    # OR the two masks and invert to get the remaining elements. Return immediately if there are no more elements
     rest_mask = ~(nan_mask | zero_mask)
+    if not np.any(rest_mask):
+        return value_class_counts, faulty_value_classes
+
     rest_faulty = faulty_values[rest_mask]
     rest_golden = golden_values[rest_mask]
 
