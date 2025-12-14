@@ -56,7 +56,7 @@ def value_classification(
     golden_values: np.ndarray,
     golden_range_min : float,
     golden_range_max : float,
-) -> tuple[defaultdict[int], np.ndarray]:
+) -> tuple[defaultdict[ValueClass, int], np.ndarray]:
     """
     Takes all the faulty and golden values corresponding to spots where the tensors differ and classifies the values.
     Returns a dictionary with the number of elements in each value class and a numpy array, shaped like the inputs, indicating
