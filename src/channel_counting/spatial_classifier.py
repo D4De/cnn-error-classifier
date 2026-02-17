@@ -59,6 +59,7 @@ MULTI_CHANNEL_CLASSIFIERS_NEW = OrderedDict(
 Defines how a faulty tensor with multiple corrupted channels must be processed in order to determine his spatial class.
 """
 
+SPATIAL_CLASS_NAMES = set(SINGLE_CHANNEL_CLASSIFIERS_NEW.keys()).union(set(MULTI_CHANNEL_CLASSIFIERS_NEW.keys()))
 
 
 def spatial_classification(

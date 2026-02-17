@@ -2,35 +2,30 @@ import os
 import csv
 import numpy as np
 
-from multiprocessing import Queue
-
 from channel_counting.args import Args
 from coordinates import map_to_coordinates
 from channel_counting.spatial_classifier import spatial_classification
+
+
+def output_dir_from_input_dir(output_dir: str, input_dir: str):
+    topdir_name = os.path.basename(os.path.dirname(input_dir))
+    unit_name = os.path.basename(input_dir)
+    return os.path.join(output_dir, topdir_name, unit_name)
 
 
 def analyze_batch(in_dir: str, args: Args, queue):
     """
     Produces a csv file listing, for each tensor in the batch, the spatial class and the number of corrupted channels.
     """
-    topdir_name = os.path.basename(os.path.dirname(in_dir))
-    unit_name = os.path.basename(in_dir)
-
-    # build unit output dir
-    out_dir = os.path.join(args.output_dir, topdir_name, unit_name)
+    out_dir = output_dir_from_input_dir(args.output_dir, in_dir)
     os.makedirs(out_dir, exist_ok=True)
-
-    batch_name = topdir_name + '/' + unit_name
 
     golden_path = os.path.join(in_dir, args.golden_path)
 
     # check if the errors archive exists
     errors_path = os.path.join(in_dir, args.faulty_path)
-
     if not os.path.exists(errors_path):
-        print(f"Skipping {batch_name} batch. Errors archive not found.")
-        return None
-    
+        raise FileNotFoundError(f'errors npz archive missing in {in_dir}')
 
     # if there is a queue specified prepare the lambda for signalling to the progress bar process that a tensor was processed
     if queue is not None:
@@ -41,24 +36,20 @@ def analyze_batch(in_dir: str, args: Args, queue):
 
     # check if the golden file exists
     if not os.path.exists(golden_path):
-        print(f"Skipping {batch_name} since it does not contain a golden file.")
-        return None
+        raise FileNotFoundError(f'golden file missing in {in_dir}')
 
     # load golden file for the batch
     try:
         golden: np.ndarray = np.load(golden_path)
     except:
-        print(f"Skipping {batch_name} batch. Could not read golden file.")
-        return None
+        raise ValueError(f'Could not open golden file in {in_dir}')
 
     if golden is None:
-        print(f'Skipping {batch_name} batch. Golden file is malformed or empty.')
-        return None
+        raise ValueError(f'Golden file malformed or empty in {in_dir}')
 
     # determine type of layer according to golden shape
     if len(golden.shape) != 4:
-        print(f"Skipping {batch_name} batch. Dimension of golden not supported: {golden.shape}.")
-        return None
+        raise ValueError(f'Unsupported dimension of golden file in {in_dir}. Dimension is {golden.shape}')
     
     # prepare channel count csv file
     with open(os.path.join(out_dir, 'channel_counts.csv'), 'w', newline='') as csvfile:

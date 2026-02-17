@@ -1,5 +1,6 @@
 import os
 import sys
+import csv
 
 from tqdm import tqdm
 from queue import Empty
@@ -7,9 +8,9 @@ from functools import partial
 from multiprocessing import Manager, Pool, Process, Queue
 
 from utils import read_npz_sizes
-from channel_counting.batch_counter import analyze_batch
 from channel_counting.args import Args, create_parser
-
+from channel_counting.batch_counter import analyze_batch, output_dir_from_input_dir
+from channel_counting.spatial_classifier import SPATIAL_CLASS_NAMES
 
 def precalculate_workload(
     hw_unit_paths: list[str], errors_filename: str = 'errors.npz'
@@ -67,6 +68,44 @@ def progress_handler(queue: Queue, work: int):
                 break
 
 
+def aggregate_unit_results(unit_dir: str):
+    total_entries = 0
+    class_counts = {}
+
+    # initialize dictionary: both single and multi channels for each class
+    for class_name in SPATIAL_CLASS_NAMES:
+        class_counts[class_name + '_single'] = 0
+        class_counts[class_name + '_multi'] = 0
+
+    # count occurrences of single/multi channel for each class in the file
+    in_csv_path = os.path.join(unit_dir, 'channel_counts.csv')
+    with open(in_csv_path) as f:
+        csvreader = csv.DictReader(f)
+        for row in csvreader:
+            class_name = row['spatial_class']
+            channel_count = row['corrupted_channels']
+
+            if channel_count == 1:
+                class_counts[class_name + '_single'] += 1
+            else:
+                class_counts[class_name + '_multi'] += 1
+
+            total_entries += 1
+    
+    # compute frequencies and save to file
+    out_csv_path = os.path.join(unit_dir, 'class_frequencies.csv')
+    fieldnames = ['spatial_class', 'channel_type', 'frequency']
+    with open(out_csv_path, 'w', newline='') as f:
+        csvwriter = csv.DictWriter(f, fieldnames=fieldnames)
+        csvwriter.writeheader()
+
+        for class_name in SPATIAL_CLASS_NAMES:
+            single_freq = float(class_counts[class_name + '_single'] / total_entries)
+            multi_freq = float(class_counts[class_name + '_multi'] / total_entries)
+            csvwriter.writerow({'spatial_class': class_name, 'channel_type': 'single', 'frequency': single_freq})
+            csvwriter.writerow({'spatial_class': class_name, 'channel_type': 'multi', 'frequency': multi_freq})
+
+
 def main():
     # Parsing command line arguments
     parser = create_parser()
@@ -121,8 +160,13 @@ def main():
     # Start the worker processes
     with Pool(args.parallel) as pool:
         result = pool.map_async(batch_partial, hw_unit_dirs, chunksize=1)
-        result_value = result.get()
+        _ = result.get()
     progress_process.join()
+
+    # aggregate results
+    for unit_dir in hw_unit_dirs:
+        out_dir = output_dir_from_input_dir(args.output_dir, unit_dir)
+        aggregate_unit_results(out_dir)
 
 
 if __name__ == "__main__":
