@@ -1,4 +1,3 @@
-
 import numpy as np
 
 from collections import OrderedDict
@@ -59,7 +58,10 @@ MULTI_CHANNEL_CLASSIFIERS_NEW = OrderedDict(
 Defines how a faulty tensor with multiple corrupted channels must be processed in order to determine his spatial class.
 """
 
-SPATIAL_CLASS_NAMES = set(SINGLE_CHANNEL_CLASSIFIERS_NEW.keys()).union(set(MULTI_CHANNEL_CLASSIFIERS_NEW.keys()))
+single_channel_class_names = [sp_class.display_name() for sp_class in SINGLE_CHANNEL_CLASSIFIERS_NEW.keys()]
+multi_channel_class_names = [sp_class.display_name() for sp_class in MULTI_CHANNEL_CLASSIFIERS_NEW.keys()]
+SPATIAL_CLASS_NAMES = set(single_channel_class_names).union(set(multi_channel_class_names))
+SPATIAL_CLASS_NAMES.add('full_channels')
 
 
 def spatial_classification(

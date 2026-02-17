@@ -7,10 +7,12 @@ from queue import Empty
 from functools import partial
 from multiprocessing import Manager, Pool, Process, Queue
 
+sys.path.insert(1, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+
 from utils import read_npz_sizes
 from channel_counting.args import Args, create_parser
 from channel_counting.batch_counter import analyze_batch, output_dir_from_input_dir
-from channel_counting.spatial_classifier import SPATIAL_CLASS_NAMES
+from channel_counting.classify import SPATIAL_CLASS_NAMES
 
 def precalculate_workload(
     hw_unit_paths: list[str], errors_filename: str = 'errors.npz'
@@ -83,7 +85,7 @@ def aggregate_unit_results(unit_dir: str):
         csvreader = csv.DictReader(f)
         for row in csvreader:
             class_name = row['spatial_class']
-            channel_count = row['corrupted_channels']
+            channel_count = int(row['corrupted_channels'])
 
             if channel_count == 1:
                 class_counts[class_name + '_single'] += 1
@@ -116,9 +118,7 @@ def main():
     # Create additional output directories
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir, exist_ok=True)
-    os.makedirs(os.path.join(args.output_dir, 'ctrl'), exist_ok=True)
-    os.makedirs(os.path.join(args.output_dir, 'data'), exist_ok=True)
-
+        
     # The error batches are grouped wrt the hardware path for the injection (control or data)
     ctrl_dir = os.path.join(args.root_path, 'ctrl')
     data_dir = os.path.join(args.root_path, 'data')
