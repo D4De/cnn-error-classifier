@@ -4,13 +4,13 @@ import numpy as np
 
 from channel_counting.args import Args
 from coordinates import map_to_coordinates
-from channel_counting.spatial_classifier import spatial_classification
+from channel_counting.classify import spatial_classification
 
 
 def output_dir_from_input_dir(output_dir: str, input_dir: str):
     topdir_name = os.path.basename(os.path.dirname(input_dir))
     unit_name = os.path.basename(input_dir)
-    return os.path.join(output_dir, topdir_name, unit_name)
+    return os.path.join(output_dir, topdir_name + '_' + unit_name)
 
 
 def analyze_batch(in_dir: str, args: Args, queue):
