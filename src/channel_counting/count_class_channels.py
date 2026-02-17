@@ -12,8 +12,8 @@ from channel_counting.args import Args, create_parser
 
 
 def precalculate_workload(
-    hw_unit_paths: List[str], errors_filename: str = 'errors.npz'
-) -> Tuple[int, Dict[str, int]]:
+    hw_unit_paths: list[str], errors_filename: str = 'errors.npz'
+):
     """
     Calculates the number of tensors to analyze in the subdirectories. Returns a tuple containing the total number of tensors in all
     subdirectories and a dict that contains the number of tensors for each one.
@@ -101,16 +101,8 @@ def main():
         [os.path.join(data_dir, dir_name) for dir_name in data_dir_names] 
     print(f"Found {len(hw_unit_dirs)} hardware units directories to analyze.")
 
-    # create unit output directories
-    for ctrl_dir_name in ctrl_dir_names:
-        os.makedirs(os.path.join(args.output_dir, 'ctrl', ctrl_dir_name), exist_ok=True)
-    for data_dir_name in data_dir_names:
-        os.makedirs(os.path.join(args.output_dir, 'data', data_dir_name), exist_ok=True)
-
-
     # workload == total number of tensors to analyze (for progress bar)
     total_tensors, unit_dirs_sizes = precalculate_workload(hw_unit_dirs)
-    hw_unit_dirs = sorted(hw_unit_dirs, key=lambda x: unit_dirs_sizes[x], reverse=True)
     print(f"Found {total_tensors} total tensors to analyze")
 
 
@@ -129,6 +121,7 @@ def main():
     # Start the worker processes
     with Pool(args.parallel) as pool:
         result = pool.map_async(batch_partial, hw_unit_dirs, chunksize=1)
+        result_value = result.get()
     progress_process.join()
 
 

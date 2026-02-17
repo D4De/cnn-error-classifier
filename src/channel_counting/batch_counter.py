@@ -9,14 +9,18 @@ from coordinates import map_to_coordinates
 from channel_counting.spatial_classifier import spatial_classification
 
 
-def analyze_batch(in_out_dirs: tuple[str, str], args: Args, queue: Queue | None):
+def analyze_batch(in_dir: str, args: Args, queue):
     """
     Produces a csv file listing, for each tensor in the batch, the spatial class and the number of corrupted channels.
     """
-    in_dir, out_dir = in_out_dirs
-
     topdir_name = os.path.basename(os.path.dirname(in_dir))
-    batch_name = topdir_name + '_' + os.path.basename(in_dir)
+    unit_name = os.path.basename(in_dir)
+
+    # build unit output dir
+    out_dir = os.path.join(args.output_dir, topdir_name, unit_name)
+    os.makedirs(out_dir, exist_ok=True)
+
+    batch_name = topdir_name + '/' + unit_name
 
     golden_path = os.path.join(in_dir, args.golden_path)
 
@@ -26,7 +30,7 @@ def analyze_batch(in_out_dirs: tuple[str, str], args: Args, queue: Queue | None)
     if not os.path.exists(errors_path):
         print(f"Skipping {batch_name} batch. Errors archive not found.")
         return None
-            
+    
 
     # if there is a queue specified prepare the lambda for signalling to the progress bar process that a tensor was processed
     if queue is not None:
@@ -129,7 +133,7 @@ def analyze_error_tensor(
 
     # No diff = masked
     if np.count_nonzero(diff_mask) == 0:
-        print(f"{errors_path} number {error_number} injection {injection_number} has no diffs with golden")
+        # print(f"{errors_path} number {error_number} injection {injection_number} has no diffs with golden")
         return None
 
     # Perform spatial classifcation
