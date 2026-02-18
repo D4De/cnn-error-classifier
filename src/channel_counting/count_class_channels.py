@@ -103,9 +103,9 @@ def aggregate_unit_results(unit_dir: str):
             class_total = class_counts[class_name + '_single'] + class_counts[class_name + '_multi']
 
             if class_total == 0:
-                # if a class is absent, arbitrarily set both to 0.5
-                single_freq = 0.5
-                multi_freq  = 0.5
+                # if a class is absent, arbitrarily set both to -1
+                single_freq = -1.0
+                multi_freq  = -1.0
             else:
                 single_freq = float(class_counts[class_name + '_single'] / class_total)
                 multi_freq  = float(class_counts[class_name + '_multi'] / class_total)
