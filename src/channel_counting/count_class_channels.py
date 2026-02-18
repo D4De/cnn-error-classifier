@@ -71,13 +71,12 @@ def progress_handler(queue: Queue, work: int):
 
 
 def aggregate_unit_results(unit_dir: str):
-    total_entries = 0
-    class_counts = {}
+    class_counts: dict[str, int] = {}
 
     # initialize dictionary: both single and multi channels for each class
     for class_name in SPATIAL_CLASS_NAMES:
         class_counts[class_name + '_single'] = 0
-        class_counts[class_name + '_multi'] = 0
+        class_counts[class_name + '_multi']  = 0
 
     # count occurrences of single/multi channel for each class in the file
     in_csv_path = os.path.join(unit_dir, 'channel_counts.csv')
@@ -92,7 +91,6 @@ def aggregate_unit_results(unit_dir: str):
             else:
                 class_counts[class_name + '_multi'] += 1
 
-            total_entries += 1
     
     # compute frequencies and save to file
     out_csv_path = os.path.join(unit_dir, 'class_frequencies.csv')
@@ -102,8 +100,16 @@ def aggregate_unit_results(unit_dir: str):
         csvwriter.writeheader()
 
         for class_name in SPATIAL_CLASS_NAMES:
-            single_freq = float(class_counts[class_name + '_single'] / total_entries)
-            multi_freq = float(class_counts[class_name + '_multi'] / total_entries)
+            class_total = class_counts[class_name + '_single'] + class_counts[class_name + '_multi']
+
+            if class_total == 0:
+                # if a class is absent, arbitrarily set both to 0.5
+                single_freq = 0.5
+                multi_freq  = 0.5
+            else:
+                single_freq = float(class_counts[class_name + '_single'] / class_total)
+                multi_freq  = float(class_counts[class_name + '_multi'] / class_total)
+                
             csvwriter.writerow({'spatial_class': class_name, 'channel_type': 'single', 'frequency': single_freq})
             csvwriter.writerow({'spatial_class': class_name, 'channel_type': 'multi', 'frequency': multi_freq})
 
