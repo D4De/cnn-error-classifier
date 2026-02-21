@@ -120,7 +120,7 @@ def analyze_error_tensor(
     error_shape  = map_to_coordinates(tensor.shape, args.tensor_layout)
 
     # Determine spots where the golden tensor and the error tensor differ
-    diff_mask = np.abs(tensor - golden) >= args.epsilon
+    diff_mask = (tensor - golden) != 0
 
     # No diff = masked
     if np.count_nonzero(diff_mask) == 0:
