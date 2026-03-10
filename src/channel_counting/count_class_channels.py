@@ -134,12 +134,14 @@ def main():
         ctrl_dir_names = [dir for dir in os.listdir(ctrl_dir) if os.path.isdir(os.path.join(ctrl_dir, dir))]
     else:
         print(f'Control path directory {ctrl_dir} is missing.')
+        ctrl_dir_names = []
 
     if os.path.isdir(data_dir):
         print('Found data directory')
         data_dir_names = [dir for dir in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, dir))]
     else:
         print(f'Data path directory {data_dir} is missing.')
+        data_dir_names = []
 
     hw_unit_dirs = \
         [os.path.join(ctrl_dir, dir_name) for dir_name in ctrl_dir_names] + \
