@@ -44,9 +44,9 @@ def generate_classes_models(results : Iterable[AnalyzedTensor], args: Args, unit
         parameter_list, categories_count = generate_parameter_list(tensors, len(results))
         classes_model[sp_class.display_name()] = {
             "count": len(tensors),
-            "frequency": len(tensors) / len(results),
+            "frequency": len(tensors) / len(results) if len(results) != 0 else 0,
             "categories_count": categories_count,
-            "domain_classes": generate_domain_class_freq(tensors, len(tensors) / len(results)),
+            "domain_classes": generate_domain_class_freq(tensors, len(tensors) / len(results) if len(tensors) != 0 else 0),
             "parameters": parameter_list
         }
 
@@ -104,7 +104,7 @@ def prune_classes_model(classes_model : Dict[str, dict], args: Args):
         }
     
     redone_classes_model = {}
-    redone_classes_model["_rejected_tensors_proportion"] = 1 - (updated_tensor_count / classes_model["_tensor_count_pre_pruning"])
+    redone_classes_model["_rejected_tensors_proportion"] = 1 - (updated_tensor_count / classes_model["_tensor_count_pre_pruning"]) if classes_model["_tensor_count_pre_pruning"] != 0 else 0
     redone_classes_model["_rejected_tensor_count"] = classes_model["_tensor_count_pre_pruning"]
     redone_classes_model["_tensor_count"] = updated_tensor_count
     redone_classes_model["_categories_count"] = updated_category_count
@@ -113,11 +113,11 @@ def prune_classes_model(classes_model : Dict[str, dict], args: Args):
         if sp_class.startswith("_"):
             continue
         redone_classes_model[sp_class] = sp_class_dict
-        redone_classes_model[sp_class]["frequency"] = redone_classes_model[sp_class]["count"] / updated_tensor_count
+        redone_classes_model[sp_class]["frequency"] = redone_classes_model[sp_class]["count"] / updated_tensor_count if updated_tensor_count != 0 else 0
         parameters = redone_classes_model[sp_class]["parameters"]
         for category in parameters:
-            category["conditional_frequency"] = category["count"] / sp_class_dict["count"]
-            category["overall_frequency"] = category["count"] / updated_tensor_count
+            category["conditional_frequency"] = category["count"] / sp_class_dict["count"] if sp_class_dict["count"] != 0 else 0
+            category["overall_frequency"] = category["count"] / updated_tensor_count if updated_tensor_count != 0 else 0
     
     return redone_classes_model
 
@@ -193,8 +193,8 @@ def generate_parameter_list(sp_class_results : Iterable[AnalyzedTensor], total_a
         param_dict = {
             "keys": analyzed_tensors[0].spatial_class_params.keys,
             "stats": stats_dict,
-            "conditional_frequency": len(analyzed_tensors) / total_sp_class_items,
-            "overall_frequency": len(analyzed_tensors) / total_analyzed_tensor_count,
+            "conditional_frequency": len(analyzed_tensors) / total_sp_class_items if total_sp_class_items != 0 else 0,
+            "overall_frequency": len(analyzed_tensors) / total_analyzed_tensor_count if total_analyzed_tensor_count != 0 else 0,
             "count": len(analyzed_tensors)
         }
         parameters_list.append(param_dict)
@@ -213,7 +213,7 @@ def generate_domain_class_freq(sp_class_results : Iterable[AnalyzedTensor], sp_c
             continue
         dom_class = tensors_in_dom_class[0].domain_class
         dom_class_count = len(tensors_in_dom_class)
-        dom_class_rel_freq = dom_class_count / len(sp_class_results)
+        dom_class_rel_freq = dom_class_count / len(sp_class_results) if len(sp_class_results) != 0 else 0
         if dom_class_rel_freq * sp_class_freq < 0.01 or dom_class_count < 5 or "random" in dom_class:
             random_count += dom_class_count
         else:
@@ -232,7 +232,7 @@ def generate_domain_class_freq(sp_class_results : Iterable[AnalyzedTensor], sp_c
             "random": (100.0, 100.0),
             "count": random_count,
             "values": values_distribution,
-            "frequency": random_count / len(sp_class_results)       
+            "frequency": random_count / len(sp_class_results) if len(sp_class_results) != 0 else 0
         })
 
     return dom_classes
@@ -247,4 +247,7 @@ def value_class_distribution(sp_class_results : Iterable[AnalyzedTensor]) -> Dic
                 continue
             value_classes_counts[val_class.display_name()] += cnt
             total_count += cnt
+    if total_count == 0:
+        return {val_class : 0 for val_class in value_classes_counts.keys()}
+    
     return {val_class : cnt / total_count for val_class, cnt in value_classes_counts.items()}
