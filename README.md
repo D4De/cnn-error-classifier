@@ -1,5 +1,5 @@
-# NVDLA Error Classifier
-This repository contains the classification tools used to analyze NVDLA's results. It produces accurate reports of spatial patterns identified and domain distribution. It can also create visualizations of the identified errors and automatically generate the JSON files used by CLASSES to perform error simulations.
+# Error Classifier
+This repository contains the classification tools used to analyze the fault injection results of NVBitFI and NVDLA. It produces accurate reports of spatial patterns identified and domain distribution. It can also create visualizations of the identified errors and automatically generate the JSON files used by CLASSES to perform error simulations.
 
 # Table of contents
 
@@ -53,42 +53,147 @@ conda activate <env>
 # Usage
 To correctly use the tool, we must first provide the corrupted tensors in a structure compatible with the classifier.
 
-## Folder structure
+## Folder structure for NVBitFI results
 ```
 error-classifier/
     ├── src/
-    │   ├── main_nvdla.py
+    │   ├── main.py
     │   └── ...
     ├── README.md
     ├── requirements.txt
     └── results_operator1/
-        ├── ctrl/
-        │   ├── golden.npy
-        │   ├── hw_unit1/
-        │   |   ├── errors.csv
-        │   |   └── errors.npz
-        │   ├── ...
-        │   └── hw_unitN
-        └── data/
-            ├── golden.npy
-            ├── hw_unit1/
-            |   ├── errors.csv
-            |   └── errors.npz
+        ├── batch1/
+        │   └── test/
+        │       ├── golden.npy
+        │       └── injection_mode/
+        │           ├── error1.npy
+        │           ├── error2.npy
+        │           ├── ...
+        │           └── errorN.npy
+        ├── batch2
+        ├── ...
+        └── batchN
+```
+At the top level of the repository `cnn-error-classifier`, we have a `src` folder containing all the files the tool needs.
+We must create a new folder for each operator we target with the injections. Inside this directory, called `results_operator1` in the above example, we will create one folder for each batch of tests we executed, giving it the following structure.
+```
+batchX/
+    └── test/
+        ├── golden.npy
+        └── injection_mode1/
+            ├── error1.npy
+            ├── error2.npy
             ├── ...
-            └── hw_unitN
+            └── errorN.npy
+        ├── ...
+        └── injection_modeN/
+            ├── error1.npy
+            ├── error2.npy
+            ├── ...
+            └── errorN.npy
+        
+```
+Each batch should have a subfolder called `test` inside which we find the following.
+* `golden.npy` the NumPy array of the expected result that will be used for reference against each corrupted tensor of the batch
+* `injection_mode` one folder for each injection mode adopted that contains all the corrupted tensors produced by NBBitFI.
+
+## Folder structure for NVDLA results
+NVDLA quantizes all tensors; "bitwidth" refers to the quantization precision adopted for the experiments (e.g., int8).
+"config" refers to the accelerator configuration used to run the experiment.
+All errors must be provided in .npz archives, each containing a sequence of .npy files. Each .npy file is a 5D tensor: the first dimension is the error group, the second is the batch, and the remaining three are the proper corrupted tensor.
+
+```
+network1/
+├── layers/
+|   ├── bitwidth1/
+|   |   ├── layer1/
+|   |   |   └── golden.npy
+|   |   ├── ...
+|   |   └── layerN/
+|   ├── ...
+|   └── bitwidthN/
+├── config1/
+|   ├── layer1/
+|   |   ├── ctrl/
+|   |   |   ├── unit1/
+|   |   |   |   └── errors.npz
+|   |   |   ├── ...
+|   |   |   └── unitN/
+|   |   └── data/
+|   |       ├── unit1/
+|   |       |   └── errors.npz
+|   |       ├── ...
+|   |       └── unitN/
+|   ├── ...
+|   └── layerN/
+├── ...
+└── configN/
 ```
 
-## Running the tool
+## Running the tool (NVBitFI)
 If the injection results follow the supported structure, we can execute the tool and classify the tensors. To do so, we need to run the following command
 
 ```bash
-python src/main_nvdla.py <operator_folder> <golden_tensor_location> <errors_location> <output_folder> [options]
+python src/main.py <operator_folder> <golden_tensor_location> test <output_folder> <options>
+```
+
+where the arguments are the following
+* `<operator_folder>`is the folder name that contains all the results of a given operator. In the example above, it is `results_operator1`.
+* `<golden_tensor_location>` is the location of the golden tensor with respect to each batch folder. In the example above, it is `test/golden.npy`. 
+* `<output_folder>` is the path to the output folder to store the analysis results. This folder doesn't need to exist. The tool will automatically check and create it if needed.
+This program also supports options that can be enabled with suitable flags.
+
+### Options
+The following options can be activated through specific flags
+* #### **Data format**
+    The default data format adopted by the classifier is  NCHW. Analyzing tensors in the NHWC format is possible by appending the flag `-nhwc`. 
+* #### **Visualization**
+    This tool is capable of creating visualizations of the errors identified. Adding the flag `-v` or `--visualize` will enable this functionality. The images produced will be organized based on the spatial pattern. 
+    N.B. Creating such a visualization is costly and will make the execution of the tool slower.
+* #### **Parallelism**
+    To speed up the execution of the tool, it is possible to enable multiprocessing. To do so, use the flag `-p N`, which will spawn `N` threads working in parallel. 
+* #### **CLASSES Models**
+    The goal of performing fault injections is to create error models that CLASSES can use. This tool can make the required JSON files during the analysis to aid this process. To enable this process, use the flag `--classes Sx Operator`, where Sx is the number of the experiment, and Operator is the name of the currently analyzed operator. I.e., if you are creating the 4th model for the convolution, use the flag `--classes S4 Conv`. NOTE: This naming convention is deprecated, but two string arguments after `--classes` are still required. You do not have to follow striclty the naming convention. If the flag is `--classes A B` the file will be named `A_B.json`.
+* #### **Epsilon**
+    By default, this classifier considers an error in each value that differs from the golden version by a value greater than 1e-3. Using the flag `-eps VAL`, we can specify a different threshold for the classifier. 
+
+### Example run
+Download an example input for the classifier from [here](https://miele.faculty.polimi.it/batch_conv_3_with_igprofile.tar.gz).
+
+Unzip it using the command :
+```
+tar xzvf batch_conv_3_with_igprofile.tar.gz 
+```
+
+Then execute:
+```
+cd src
+```
+
+```
+python main.py ../tests_2023-04-16_11-00-25 test/output_1.npy test ../output_test --classes conv gemm
+```
+
+
+This command:
+Executes the classifier reading from the extracted test folder with the nvbitfi resuts.
+
+It reads relatively from each test folder (conv_1, conv_2, ...):
+* the golden output: ``test/output_1.npy``  
+* the folder where corrupted output subfolders (fp32_wrv, gp_wrv) are located: ``test``
+
+And outputs in the test folder generating also the classes models. 
+
+
+## Running the tool (NVDLA)
+```bash
+python src/main_nvdla.py <layer_folder> <relative_golden_tensor_path> <relative_errors_path> <output_folder> -as --classes <model_name> '' [options]
 ```
 
 As an example, suppose to have operator folder `conv1` structured as explained above. In that case, the command would be
 
 ```bash
-python src/main_nvdla.py </path/to/conv1> ../golden.npy errors.npz </path/to/output/folder> [options]
+python src/main_nvdla.py </path/to/conv1> ../golden.npy errors.npz </path/to/output/folder> -as --classes conv1 '' [options]
 ```
 
 ### Options
@@ -102,8 +207,20 @@ The following options are the most relevant ones for an NVDLA injection campaign
 * #### **CLASSES Models**
     The goal of performing fault injections is to create error models that CLASSES can use. This tool can make the required JSON files during the analysis to aid this process. To enable this process, use the flag `--classes Sx Operator`, where Sx is the number of the experiment, and Operator is the name of the currently analyzed operator. I.e., if you are creating the 4th model for the convolution, use the flag `--classes S4 Conv`. NOTE: This naming convention is deprecated, but two string arguments after `--classes` are still required. You do not have to follow striclty the naming convention. If the flag is `--classes A B` the file will be named `A_B.json`.
 * #### **Error models for each hardware unit**
-    If you wish to study the behavior of a single hardware unit, use option `--classes-unit-models`. This will generate one error model
-    per hardware unit.
+    If you wish to study the behavior of a single hardware unit, use option `--classes-unit-models`. This will generate one error model per hardware unit.
     N.B. This requires the `--classes` option to be enabled, otherwise model generation will fail.
 * #### **Epsilon**
-    By default, this classifier considers an error in each value that differs from the golden version by a value greater than 1e-3. Using the flag `-eps VAL`, we can specify a different threshold for the classifier. 
+    By default, this classifier considers an error in each value that differs from the golden version by a value greater than 1e-3. Using the flag `-eps VAL`, we can specify a different threshold for the classifier.
+* #### **IMPORTANT: Almost-same**
+    The -as or --almost-same option MUST be used to properly use epsilon in tensor value inequalities. If you omit it, the classifier will instead simply check whether the values are different.
+
+## Channel counting (NVDLA)
+Directory `channel_counting` contains some scripts to perform an additional check: for each corrupted tensor in the results of a specified layer, this tool determines the spatial class of the tensor and counts the number of corrupted channels in it, reporting the results in a `channel_counts.csv` file for each HW unit. These results are then aggregated (also for each unit) in a `class_frequencies.csv` file, listing the percentages of single-channel and multi-channel tensors encountered for each spatial class.
+
+The counting tool is run mostly like the classifier:
+```bash
+python src/channel_counting/count_class_channels.py <layer_folder> <relative_golden_tensor_path> <relative_errors_path> <output_folder> [options]
+```
+The only two available options are -p and -eps.
+
+Be aware that this tool runs a simplified version of the classifier; while it is faster, it still iterates over all corrupted tensors of the given layer, meaning that it may take a significant time.
