@@ -224,3 +224,15 @@ python src/channel_counting/count_class_channels.py <layer_folder> <relative_gol
 The only two available options are -p and -eps.
 
 Be aware that this tool runs a simplified version of the classifier; while it is faster, it still iterates over all corrupted tensors of the given layer, meaning that it may take a significant time.
+
+# Extending the set of recognized spatial classes
+Note that the following is not an exhaustive guide, but simply a collection of pointers that may be followed to more easily add new spatial classes to the set of recognized ones.
+
+First, implement a recognizer function in a new script in `src/spatial_classifier/classifiers`. It is suggested that you name the script after the new spatial class. Take a look at `template.py` to see the general structure of a recognizer function.
+
+Next, extend the Enum defined in `src/spatial_classifier/spatial_class.py` by adding an entry for your new class; also add an entry to the `to_classes_id()` function below the Enum definition.
+
+In `src/spatial_classifier/spatial_classifier.py`, extend the import list at the top by importing your new recognizer function. Then, add an entry to either the `SINGLE_CHANNEL_CLASSIFIERS_NEW` dictionary (if you new spatial class only affects one channel) or the `MULTI_CHANNEL_CLASSIFIERS_NEW` dictionary (if multiple channels are affected). The entry is a pair, associating the new Enum entry you defined with the new recognizer function.
+These two dictionaries are iterated over by the classifier and each entry's function is used to test the corresponding spatial class against a corrupted tensor. If you want the classifier to skip some spatial classes, simply comment out the related entries in the relevant dictionary.
+
+These steps should cover the majority of the classifier extension process. If the new recognizer function does not work straight away, you may want to check the other scripts in the `src` directory, starting from `main_nvdla.py` and possibly focusing especially on `batch_analyzer_nvdla.py` and `tensor_analyzer.py`, which implement most of the classifier's logic.
