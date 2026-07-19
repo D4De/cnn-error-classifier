@@ -29,7 +29,7 @@ def analyze_batch(
     Multiple instances of this function can be run in parallel using multiprocessing, for speeding up the analysis.
     """
     golden_path = os.path.join(batch_path, args.golden_path)
-    
+
     topdir_name = os.path.basename(os.path.dirname(batch_path))
     batch_name = topdir_name + '_' + os.path.basename(batch_path)
 
