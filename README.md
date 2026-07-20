@@ -249,7 +249,7 @@ These two dictionaries are iterated over by the classifier and each entry's func
 These steps should cover the majority of the classifier extension process. If the new recognizer function does not work straight away, you may want to check the other scripts in the `src` directory, starting from `main_nvdla.py` and possibly focusing especially on `batch_analyzer_nvdla.py` and `tensor_analyzer.py`, which implement most of the classifier's logic.
 
 ## NVDLA Example Run
-Download an example NVDLA FI output [here](...).
+Download an example NVDLA FI output [here](https://miele.faculty.polimi.it/classifier_example_data.tar.xz).
 
 Move it to the root folder of the classifier and extract with:
 ```
